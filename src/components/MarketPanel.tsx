@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { AIRCRAFT_MODELS } from '../data/aircraft'
 import { useGameStore } from '../store/gameStore'
 import { formatMoney } from '../format'
-import { SEAT_UNIT, cabinUpfitCost } from '../engine/economy'
-import type { AircraftModel, GameState, SeatConfig, TutorialStep } from '../types'
+import { SEAT_UNIT, SEAT_CLASSES, seatUnitsUsed, totalSeatCount, cabinUpfitCost } from '../engine/economy'
+import type { AircraftModel, GameState, SeatClass, SeatConfig, TutorialStep } from '../types'
 import { Field } from './Field'
 import { NumberInput } from './NumberInput'
 
@@ -11,6 +11,12 @@ const CATEGORY_LABEL: Record<string, string> = {
   regional: 'Regional',
   narrowbody: 'Corredor único',
   widebody: 'Longo curso',
+}
+
+const CLASS_LABEL: Record<SeatClass, string> = {
+  economy: 'Econômica',
+  business: 'Executiva (2x espaço)',
+  first: 'Primeira (4x espaço)',
 }
 
 export function MarketPanel({ state, tutorial }: { state: GameState; tutorial?: TutorialStep }) {
@@ -83,6 +89,30 @@ export function MarketPanel({ state, tutorial }: { state: GameState; tutorial?: 
   )
 }
 
+/** Sets `changed` to `rawCount` and shrinks the other two classes proportionally so the total
+ *  space used never exceeds the aircraft's seat-unit budget. */
+function reallocateSeats(config: SeatConfig, totalBudget: number, changed: SeatClass, rawCount: number): SeatConfig {
+  const weight = SEAT_UNIT[changed]
+  const maxCount = Math.floor(totalBudget / weight)
+  const newCount = Math.min(Math.max(0, rawCount), maxCount)
+  const remaining = totalBudget - newCount * weight
+
+  const others = SEAT_CLASSES.filter((c) => c !== changed)
+  const otherUnits = others.map((c) => config[c] * SEAT_UNIT[c])
+  const sumOtherUnits = otherUnits[0] + otherUnits[1]
+
+  const next: SeatConfig = { ...config, [changed]: newCount }
+
+  if (sumOtherUnits > remaining) {
+    const scale = sumOtherUnits > 0 ? remaining / sumOtherUnits : 0
+    others.forEach((c, i) => {
+      next[c] = Math.floor((otherUnits[i] * scale) / SEAT_UNIT[c])
+    })
+  }
+
+  return next
+}
+
 function CabinConfigurator({
   model,
   cash,
@@ -94,52 +124,59 @@ function CabinConfigurator({
   onCancel: () => void
   onConfirm: (config: SeatConfig) => void
 }) {
-  const [business, setBusiness] = useState(0)
-  const [first, setFirst] = useState(0)
+  const [config, setConfig] = useState<SeatConfig>({ economy: model.seats, business: 0, first: 0 })
 
-  const unitsUsed = business * SEAT_UNIT.business + first * SEAT_UNIT.first
-  const economy = Math.max(0, model.seats - unitsUsed)
-  const config: SeatConfig = { economy, business, first }
+  const handleChange = (cls: SeatClass, value: number) => {
+    setConfig((prev) => reallocateSeats(prev, model.seats, cls, value))
+  }
+
+  const unitsUsed = seatUnitsUsed(config)
   const totalPrice = model.price + cabinUpfitCost(config)
-  const overBudget = unitsUsed > model.seats
-  const totalSeats = economy + business + first
+  const totalSeats = totalSeatCount(config)
 
   return (
     <div
       style={{
         display: 'flex',
-        gap: 14,
-        alignItems: 'flex-end',
-        flexWrap: 'wrap',
+        flexDirection: 'column',
+        gap: 12,
         padding: 12,
         background: 'var(--panel)',
         border: '1px solid var(--border-soft)',
         borderRadius: 'var(--radius-sm)',
       }}
     >
-      <Field label="Assentos executiva (2x espaço)">
-        <NumberInput style={{ width: 80 }} min={0} value={business} onChange={setBusiness} />
-      </Field>
-      <Field label="Assentos primeira (4x espaço)">
-        <NumberInput style={{ width: 80 }} min={0} value={first} onChange={setFirst} />
-      </Field>
-      <div style={{ fontSize: 13, color: overBudget ? 'var(--red)' : 'var(--text-dim)' }}>
-        Econômica: {economy} assentos
-        <br />
-        Total: {totalSeats} lugares ({unitsUsed}/{model.seats} unidades de espaço)
+      {SEAT_CLASSES.map((cls) => (
+        <Field key={cls} label={`${CLASS_LABEL[cls]} — ${config[cls]} assentos`}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              type="range"
+              min={0}
+              max={Math.floor(model.seats / SEAT_UNIT[cls])}
+              value={config[cls]}
+              onChange={(e) => handleChange(cls, Number(e.target.value))}
+              style={{ flex: 1 }}
+            />
+            <NumberInput style={{ width: 64 }} min={0} value={config[cls]} onChange={(v) => handleChange(cls, v)} />
+          </div>
+        </Field>
+      ))}
+
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span className="stat-chip">
+          Total <strong>{totalSeats} lugares</strong> ({unitsUsed}/{model.seats} unidades de espaço)
+        </span>
+        <span className="stat-chip">
+          Preço com essa cabine <strong>{formatMoney(totalPrice)}</strong>
+        </span>
       </div>
-      <div style={{ fontSize: 13 }}>
-        <span style={{ color: 'var(--text-dim)' }}>Preço com essa cabine: </span>
-        <strong style={{ color: 'var(--text-h)' }}>{formatMoney(totalPrice)}</strong>
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="primary" disabled={cash < totalPrice} onClick={() => onConfirm(config)}>
+          Confirmar compra
+        </button>
+        <button onClick={onCancel}>Cancelar</button>
       </div>
-      <button
-        className="primary"
-        disabled={overBudget || cash < totalPrice}
-        onClick={() => onConfirm(config)}
-      >
-        Confirmar compra
-      </button>
-      <button onClick={onCancel}>Cancelar</button>
     </div>
   )
 }
