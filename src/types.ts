@@ -75,6 +75,8 @@ export interface Company {
   reputation: number
 }
 
+export type TutorialStep = 'buy_aircraft' | 'create_route' | 'dispatch_flight' | 'stock_intro' | 'done'
+
 export interface GameState {
   version: number
   company: Company
@@ -85,4 +87,5 @@ export interface GameState {
   stock: StockState
   ledger: FinanceEvent[]
   lastSeen: number
+  tutorial: TutorialStep
 }

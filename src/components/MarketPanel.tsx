@@ -1,7 +1,7 @@
 import { AIRCRAFT_MODELS } from '../data/aircraft'
 import { useGameStore } from '../store/gameStore'
 import { formatMoney } from '../format'
-import type { GameState } from '../types'
+import type { GameState, TutorialStep } from '../types'
 
 const CATEGORY_LABEL: Record<string, string> = {
   regional: 'Regional',
@@ -9,8 +9,9 @@ const CATEGORY_LABEL: Record<string, string> = {
   widebody: 'Longo curso',
 }
 
-export function MarketPanel({ state }: { state: GameState }) {
+export function MarketPanel({ state, tutorial }: { state: GameState; tutorial?: TutorialStep }) {
   const buyAircraft = useGameStore((s) => s.buyAircraft)
+  const highlightBuy = tutorial === 'buy_aircraft'
 
   return (
     <div>
@@ -35,7 +36,11 @@ export function MarketPanel({ state }: { state: GameState }) {
               <td>{m.seats}</td>
               <td>{formatMoney(m.price)}</td>
               <td>
-                <button disabled={state.cash < m.price} onClick={() => buyAircraft(m.id)}>
+                <button
+                  className={highlightBuy && state.cash >= m.price ? 'tutorial-highlight' : undefined}
+                  disabled={state.cash < m.price}
+                  onClick={() => buyAircraft(m.id)}
+                >
                   Comprar
                 </button>
               </td>

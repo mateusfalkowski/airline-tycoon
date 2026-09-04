@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { GameState, OwnedAircraft, Route } from '../types'
+import type { TutorialStep } from '../types'
 import { findAircraftModel } from '../data/aircraft'
 import { findAirport } from '../data/airports'
 import { distanceKm } from '../engine/geo'
@@ -23,6 +24,7 @@ interface GameStore {
   doIpo: (floatPercent: number) => void
   doSellShares: (shares: number) => void
   doBuyBackShares: (shares: number) => void
+  finishTutorial: () => void
   resetGame: () => void
 }
 
@@ -36,7 +38,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   init: () => {
     const saved = loadGame()
     if (saved) {
-      const caughtUp = catchUp(saved)
+      const withTutorial: GameState = { ...saved, tutorial: saved.tutorial ?? 'done' }
+      const caughtUp = catchUp(withTutorial)
       set({ state: caughtUp })
       persist(caughtUp)
     }
@@ -55,6 +58,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       stock: createInitialStock(sharePrice),
       ledger: [{ id: 'evt-founding', t: Date.now(), label: `${name} foi fundada em ${hubCode}`, amount: STARTING_CASH }],
       lastSeen: Date.now(),
+      tutorial: 'buy_aircraft',
     }
     set({ state: newState })
     persist(newState)
@@ -74,6 +78,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         { id: `evt-buy-${aircraft.id}`, t: Date.now(), label: `Comprou ${model.name}`, amount: -model.price },
         ...state.ledger,
       ].slice(0, 100),
+      tutorial: state.tutorial === 'buy_aircraft' ? 'create_route' : state.tutorial,
     }
     set({ state: next })
     persist(next)
@@ -98,7 +103,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const model = findAircraftModel(aircraft.modelId)
     if (model) route.flightTimeHours = flightTimeHours(route.distanceKm, model.cruiseSpeedKmh)
 
-    const next: GameState = { ...state, routes: [...state.routes, route] }
+    const next: GameState = {
+      ...state,
+      routes: [...state.routes, route],
+      tutorial: state.tutorial === 'create_route' ? 'dispatch_flight' : state.tutorial,
+    }
     set({ state: next })
     persist(next)
   },
@@ -129,6 +138,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       fleet: state.fleet.map((a) =>
         a.id === aircraft.id ? { ...a, status: 'flying', flight: { routeId, departedAt: now, arrivesAt } } : a,
       ),
+      tutorial: state.tutorial === 'dispatch_flight' ? 'stock_intro' : state.tutorial,
     }
     set({ state: next })
     persist(next)
@@ -189,6 +199,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
         ...state.ledger,
       ].slice(0, 100),
     }
+    set({ state: next })
+    persist(next)
+  },
+
+  finishTutorial: () => {
+    const state = get().state
+    if (!state) return
+    const next: GameState = { ...state, tutorial: 'done' as TutorialStep }
     set({ state: next })
     persist(next)
   },

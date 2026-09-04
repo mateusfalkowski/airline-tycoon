@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { GameState } from '../types'
+import type { GameState, TutorialStep } from '../types'
 import { AIRPORTS, findAirport } from '../data/airports'
 import { findAircraftModel } from '../data/aircraft'
 import { distanceKm } from '../engine/geo'
@@ -7,10 +7,12 @@ import { fairPrice } from '../engine/economy'
 import { useGameStore } from '../store/gameStore'
 import { formatCountdown, formatDuration, formatMoney } from '../format'
 
-export function RoutesPanel({ state, now }: { state: GameState; now: number }) {
+export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: number; tutorial?: TutorialStep }) {
   const createRoute = useGameStore((s) => s.createRoute)
   const dispatchFlight = useGameStore((s) => s.dispatchFlight)
   const [editingAircraft, setEditingAircraft] = useState<string | null>(null)
+  const highlightDefineRoute = tutorial === 'create_route'
+  const highlightDispatch = tutorial === 'dispatch_flight'
 
   if (state.fleet.length === 0) {
     return <p style={{ color: 'var(--text-dim)' }}>Compre uma aeronave no Mercado para começar a voar.</p>
@@ -52,7 +54,12 @@ export function RoutesPanel({ state, now }: { state: GameState; now: number }) {
                       }}
                     />
                   ) : (
-                    <button onClick={() => setEditingAircraft(aircraft.id)}>Definir rota</button>
+                    <button
+                      className={highlightDefineRoute ? 'tutorial-highlight' : undefined}
+                      onClick={() => setEditingAircraft(aircraft.id)}
+                    >
+                      Definir rota
+                    </button>
                   )}
                 </td>
                 <td>{route ? formatMoney(route.ticketPrice) : '—'}</td>
@@ -65,7 +72,10 @@ export function RoutesPanel({ state, now }: { state: GameState; now: number }) {
                 </td>
                 <td>
                   {route && aircraft.status === 'idle' && (
-                    <button className="primary" onClick={() => dispatchFlight(route.id)}>
+                    <button
+                      className={`primary${highlightDispatch ? ' tutorial-highlight' : ''}`}
+                      onClick={() => dispatchFlight(route.id)}
+                    >
                       Despachar
                     </button>
                   )}

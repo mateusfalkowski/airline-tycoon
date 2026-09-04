@@ -6,9 +6,18 @@ import { MarketPanel } from './components/MarketPanel'
 import { RoutesPanel } from './components/RoutesPanel'
 import { StockPanel } from './components/StockPanel'
 import { LedgerPanel } from './components/LedgerPanel'
+import { TutorialBanner } from './components/TutorialBanner'
+import type { TutorialStep } from './types'
 
 const TABS = ['Rotas', 'Mercado', 'Bolsa', 'Extrato'] as const
 type Tab = (typeof TABS)[number]
+
+const TUTORIAL_TAB: Partial<Record<TutorialStep, Tab>> = {
+  buy_aircraft: 'Mercado',
+  create_route: 'Rotas',
+  dispatch_flight: 'Rotas',
+  stock_intro: 'Bolsa',
+}
 
 function App() {
   const state = useGameStore((s) => s.state)
@@ -29,9 +38,17 @@ function App() {
     return () => clearInterval(id)
   }, [doTick])
 
+  const lockedTab = state ? TUTORIAL_TAB[state.tutorial] : undefined
+
+  useEffect(() => {
+    if (lockedTab) setTab(lockedTab)
+  }, [lockedTab])
+
   if (!state) {
     return <Onboarding />
   }
+
+  const activeTab = lockedTab ?? tab
 
   return (
     <div>
@@ -41,10 +58,11 @@ function App() {
         {TABS.map((t) => (
           <button
             key={t}
+            disabled={Boolean(lockedTab) && t !== lockedTab}
             onClick={() => setTab(t)}
             style={{
-              background: tab === t ? 'var(--accent-dim)' : 'transparent',
-              borderColor: tab === t ? 'var(--accent)' : 'var(--border)',
+              background: activeTab === t ? 'var(--accent-dim)' : 'transparent',
+              borderColor: activeTab === t ? 'var(--accent)' : 'var(--border)',
             }}
           >
             {t}
@@ -52,11 +70,13 @@ function App() {
         ))}
       </nav>
 
+      {state.tutorial !== 'done' && <TutorialBanner step={state.tutorial} />}
+
       <main style={{ padding: 20, maxWidth: 960, width: '100%', margin: '0 auto' }}>
-        {tab === 'Rotas' && <RoutesPanel state={state} now={now} />}
-        {tab === 'Mercado' && <MarketPanel state={state} />}
-        {tab === 'Bolsa' && <StockPanel state={state} />}
-        {tab === 'Extrato' && <LedgerPanel state={state} />}
+        {activeTab === 'Rotas' && <RoutesPanel state={state} now={now} tutorial={state.tutorial} />}
+        {activeTab === 'Mercado' && <MarketPanel state={state} tutorial={state.tutorial} />}
+        {activeTab === 'Bolsa' && <StockPanel state={state} />}
+        {activeTab === 'Extrato' && <LedgerPanel state={state} />}
       </main>
     </div>
   )
