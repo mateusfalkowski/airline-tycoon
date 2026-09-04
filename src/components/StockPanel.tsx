@@ -4,6 +4,7 @@ import { useGameStore } from '../store/gameStore'
 import { marketShares, computeValuation } from '../engine/stockMarket'
 import { formatMoney, formatShares } from '../format'
 import { StockChart } from './StockChart'
+import { Field } from './Field'
 
 export function StockPanel({ state }: { state: GameState }) {
   const doIpo = useGameStore((s) => s.doIpo)
@@ -37,16 +38,20 @@ export function StockPanel({ state }: { state: GameState }) {
               Abra o capital da empresa (IPO): venda uma fatia das ações para investidores (bots, por enquanto) e
               levante caixa imediato.
             </p>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input
-                type="number"
-                style={{ width: 70 }}
-                min={1}
-                max={90}
-                value={floatPct}
-                onChange={(e) => setFloatPct(Number(e.target.value))}
-              />
-              <span>%</span>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+              <Field label="Fatia das ações a vender">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <input
+                    type="number"
+                    style={{ width: 70 }}
+                    min={1}
+                    max={90}
+                    value={floatPct}
+                    onChange={(e) => setFloatPct(Number(e.target.value))}
+                  />
+                  <span style={{ color: 'var(--text-dim)' }}>%</span>
+                </div>
+              </Field>
               <button className="primary" onClick={() => doIpo(floatPct)}>
                 Abrir capital
               </button>
@@ -58,23 +63,25 @@ export function StockPanel({ state }: { state: GameState }) {
               Venda mais ações para levantar caixa (dilui sua participação) ou recompre ações do mercado para
               recuperar controle.
             </p>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <input
-                type="number"
-                style={{ width: 110 }}
-                min={0}
-                step={1000}
-                value={tradeShares}
-                onChange={(e) => setTradeShares(Number(e.target.value))}
-              />
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <Field label="Quantidade de ações">
+                <input
+                  type="number"
+                  style={{ width: 110 }}
+                  min={0}
+                  step={1000}
+                  value={tradeShares}
+                  onChange={(e) => setTradeShares(Number(e.target.value))}
+                />
+              </Field>
               <button disabled={tradeShares > stock.playerShares} onClick={() => doSellShares(tradeShares)}>
-                Vender
+                Vender ações
               </button>
               <button
                 disabled={tradeShares > bots || tradeShares * stock.sharePrice > state.cash}
                 onClick={() => doBuyBackShares(tradeShares)}
               >
-                Recomprar
+                Recomprar ações
               </button>
             </div>
           </div>

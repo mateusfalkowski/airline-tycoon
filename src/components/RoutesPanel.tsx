@@ -6,6 +6,7 @@ import { distanceKm } from '../engine/geo'
 import { fairPrice } from '../engine/economy'
 import { useGameStore } from '../store/gameStore'
 import { formatCountdown, formatDuration, formatMoney } from '../format'
+import { Field } from './Field'
 
 export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: number; tutorial?: TutorialStep }) {
   const createRoute = useGameStore((s) => s.createRoute)
@@ -109,35 +110,44 @@ function RouteForm({
   const [price, setPrice] = useState(suggestedPrice)
 
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-      <select value={origin} onChange={(e) => setOrigin(e.target.value)}>
-        {AIRPORTS.map((a) => (
-          <option key={a.code} value={a.code}>
-            {a.code}
-          </option>
-        ))}
-      </select>
-      →
-      <select value={dest} onChange={(e) => setDest(e.target.value)}>
-        {AIRPORTS.filter((a) => a.code !== origin).map((a) => (
-          <option key={a.code} value={a.code}>
-            {a.code}
-          </option>
-        ))}
-      </select>
-      <input
-        type="number"
-        style={{ width: 90 }}
-        value={price}
-        min={1}
-        onChange={(e) => setPrice(Number(e.target.value))}
-      />
+    <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+      <Field label="Origem">
+        <select value={origin} onChange={(e) => setOrigin(e.target.value)}>
+          {AIRPORTS.map((a) => (
+            <option key={a.code} value={a.code}>
+              {a.code}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <span style={{ paddingBottom: 7, color: 'var(--text-dim)' }}>→</span>
+      <Field label="Destino">
+        <select value={dest} onChange={(e) => setDest(e.target.value)}>
+          {AIRPORTS.filter((a) => a.code !== origin).map((a) => (
+            <option key={a.code} value={a.code}>
+              {a.code}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Preço da passagem">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ color: 'var(--text-dim)' }}>$</span>
+          <input
+            type="number"
+            style={{ width: 80 }}
+            value={price}
+            min={1}
+            onChange={(e) => setPrice(Number(e.target.value))}
+          />
+        </div>
+      </Field>
       <button
         className="primary"
         disabled={origin === dest}
         onClick={() => onCreate(origin, dest, price)}
       >
-        Criar
+        Criar rota
       </button>
       <button onClick={onCancel}>Cancelar</button>
     </div>
