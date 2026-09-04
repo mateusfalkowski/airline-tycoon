@@ -2,6 +2,7 @@ import type { GameState, FinanceEvent } from '../types'
 import { findAircraftModel } from '../data/aircraft'
 import { findAirport } from '../data/airports'
 import { simulateFlight, clamp } from './economy'
+import { computeRouteDemand } from './demand'
 import { runBotTick } from './stockMarket'
 
 let eventCounter = 0
@@ -29,7 +30,16 @@ export function tick(state: GameState): GameState {
       return { ...aircraft, status: 'idle' as const, flight: undefined }
     }
 
-    const result = simulateFlight(model, route.distanceKm, route.ticketPrice, reputation, state.fuelPrice)
+    const demand = computeRouteDemand(origin, dest, route.distanceKm)
+    const result = simulateFlight(
+      model,
+      route.distanceKm,
+      aircraft.seatConfig,
+      route.prices,
+      demand,
+      reputation,
+      state.fuelPrice,
+    )
     cash += result.profit
     reputation = clamp(reputation + result.reputationDelta, 0, 100)
 

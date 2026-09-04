@@ -5,6 +5,7 @@ export interface Airport {
   country: string
   lat: number
   lon: number
+  weight: number
 }
 
 export type AircraftCategory = 'regional' | 'narrowbody' | 'widebody'
@@ -22,6 +23,10 @@ export interface AircraftModel {
   maintenancePerHour: number
 }
 
+export type SeatClass = 'economy' | 'business' | 'first'
+
+export type SeatConfig = Record<SeatClass, number>
+
 export type FlightStatus = 'idle' | 'flying'
 
 export interface ActiveFlight {
@@ -34,6 +39,7 @@ export interface OwnedAircraft {
   id: string
   modelId: string
   status: FlightStatus
+  seatConfig: SeatConfig
   flight?: ActiveFlight
 }
 
@@ -42,7 +48,7 @@ export interface Route {
   originCode: string
   destCode: string
   aircraftId: string
-  ticketPrice: number
+  prices: Record<SeatClass, number>
   distanceKm: number
   flightTimeHours: number
 }

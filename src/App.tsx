@@ -12,6 +12,13 @@ import type { TutorialStep } from './types'
 const TABS = ['Rotas', 'Mercado', 'Bolsa', 'Extrato'] as const
 type Tab = (typeof TABS)[number]
 
+const TAB_ICON: Record<Tab, string> = {
+  Rotas: '🛫',
+  Mercado: '🛒',
+  Bolsa: '📈',
+  Extrato: '🧾',
+}
+
 const TUTORIAL_TAB: Partial<Record<TutorialStep, Tab>> = {
   buy_aircraft: 'Mercado',
   create_route: 'Rotas',
@@ -54,29 +61,43 @@ function App() {
     <div>
       <TopBar state={state} />
 
-      <nav style={{ display: 'flex', gap: 4, padding: '10px 20px', borderBottom: '1px solid var(--border)' }}>
+      <nav
+        style={{
+          display: 'flex',
+          gap: 8,
+          padding: '14px 20px',
+          borderBottom: '1px solid var(--border-soft)',
+          flexWrap: 'wrap',
+        }}
+      >
         {TABS.map((t) => (
           <button
             key={t}
             disabled={Boolean(lockedTab) && t !== lockedTab}
             onClick={() => setTab(t)}
             style={{
-              background: activeTab === t ? 'var(--accent-dim)' : 'transparent',
+              borderRadius: 999,
+              padding: '8px 16px',
+              fontWeight: 600,
+              background: activeTab === t ? 'var(--accent)' : 'var(--panel-alt)',
+              color: activeTab === t ? '#06202f' : 'var(--text)',
               borderColor: activeTab === t ? 'var(--accent)' : 'var(--border)',
             }}
           >
-            {t}
+            {TAB_ICON[t]} {t}
           </button>
         ))}
       </nav>
 
       {state.tutorial !== 'done' && <TutorialBanner step={state.tutorial} />}
 
-      <main style={{ padding: 20, maxWidth: 960, width: '100%', margin: '0 auto' }}>
-        {activeTab === 'Rotas' && <RoutesPanel state={state} now={now} tutorial={state.tutorial} />}
-        {activeTab === 'Mercado' && <MarketPanel state={state} tutorial={state.tutorial} />}
-        {activeTab === 'Bolsa' && <StockPanel state={state} />}
-        {activeTab === 'Extrato' && <LedgerPanel state={state} />}
+      <main style={{ padding: 20, maxWidth: 1000, width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
+        <div className="card">
+          {activeTab === 'Rotas' && <RoutesPanel state={state} now={now} tutorial={state.tutorial} />}
+          {activeTab === 'Mercado' && <MarketPanel state={state} tutorial={state.tutorial} />}
+          {activeTab === 'Bolsa' && <StockPanel state={state} />}
+          {activeTab === 'Extrato' && <LedgerPanel state={state} />}
+        </div>
       </main>
     </div>
   )

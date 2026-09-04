@@ -34,9 +34,11 @@ export function TutorialBanner({ step }: { step: TutorialStep }) {
   return (
     <div
       style={{
-        margin: '16px 20px 0',
-        padding: '14px 16px',
-        borderRadius: 8,
+        maxWidth: 1000,
+        width: 'calc(100% - 40px)',
+        margin: '18px auto 0',
+        padding: '14px 18px',
+        borderRadius: 'var(--radius)',
         border: '1px solid var(--accent)',
         background: 'var(--accent-dim)',
         display: 'flex',
@@ -44,6 +46,7 @@ export function TutorialBanner({ step }: { step: TutorialStep }) {
         alignItems: 'center',
         gap: 16,
         flexWrap: 'wrap',
+        boxSizing: 'border-box',
       }}
     >
       <div>

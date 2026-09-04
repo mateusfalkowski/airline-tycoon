@@ -1,10 +1,10 @@
 import { create } from 'zustand'
-import type { GameState, OwnedAircraft, Route } from '../types'
+import type { GameState, OwnedAircraft, Route, SeatClass, SeatConfig } from '../types'
 import type { TutorialStep } from '../types'
 import { findAircraftModel } from '../data/aircraft'
 import { findAirport } from '../data/airports'
 import { distanceKm } from '../engine/geo'
-import { flightTimeHours, BASE_FUEL_PRICE } from '../engine/economy'
+import { flightTimeHours, BASE_FUEL_PRICE, seatUnitsUsed, cabinUpfitCost } from '../engine/economy'
 import { tick as runTick, catchUp } from '../engine/simulation'
 import { createInitialStock, computeValuation, ipo, sellShares, buyBackShares } from '../engine/stockMarket'
 import { loadGame, saveGame, wipeSave } from '../engine/persistence'
@@ -12,13 +12,32 @@ import { INITIAL_TOTAL_SHARES } from '../engine/stockMarket'
 
 const STARTING_CASH = 25_000_000
 
+function allEconomyConfig(seats: number): SeatConfig {
+  return { economy: seats, business: 0, first: 0 }
+}
+
+function migrateState(saved: GameState): GameState {
+  const fleet = saved.fleet.map((aircraft) => {
+    if (aircraft.seatConfig) return aircraft
+    const model = findAircraftModel(aircraft.modelId)
+    return { ...aircraft, seatConfig: allEconomyConfig(model?.seats ?? 0) }
+  })
+
+  const routes = saved.routes.map((route) => {
+    if (route.prices) return route
+    const legacyPrice = (route as unknown as { ticketPrice?: number }).ticketPrice ?? 0
+    return { ...route, prices: { economy: legacyPrice, business: 0, first: 0 } }
+  })
+
+  return { ...saved, fleet, routes, tutorial: saved.tutorial ?? 'done' }
+}
+
 interface GameStore {
   state: GameState | null
   init: () => void
   createCompany: (name: string, hubCode: string) => void
-  buyAircraft: (modelId: string) => void
-  createRoute: (originCode: string, destCode: string, aircraftId: string, ticketPrice: number) => void
-  updateTicketPrice: (routeId: string, price: number) => void
+  buyAircraft: (modelId: string, seatConfig?: SeatConfig) => void
+  createRoute: (originCode: string, destCode: string, aircraftId: string, prices: Record<SeatClass, number>) => void
   dispatchFlight: (routeId: string) => void
   doTick: () => void
   doIpo: (floatPercent: number) => void
@@ -38,8 +57,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   init: () => {
     const saved = loadGame()
     if (saved) {
-      const withTutorial: GameState = { ...saved, tutorial: saved.tutorial ?? 'done' }
-      const caughtUp = catchUp(withTutorial)
+      const caughtUp = catchUp(migrateState(saved))
       set({ state: caughtUp })
       persist(caughtUp)
     }
@@ -64,18 +82,29 @@ export const useGameStore = create<GameStore>((set, get) => ({
     persist(newState)
   },
 
-  buyAircraft: (modelId) => {
+  buyAircraft: (modelId, seatConfig) => {
     const state = get().state
     const model = findAircraftModel(modelId)
-    if (!state || !model || state.cash < model.price) return
+    if (!state || !model) return
 
-    const aircraft: OwnedAircraft = { id: `ac-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, modelId, status: 'idle' }
+    const config = seatConfig ?? allEconomyConfig(model.seats)
+    if (seatUnitsUsed(config) > model.seats) return
+
+    const totalPrice = model.price + cabinUpfitCost(config)
+    if (state.cash < totalPrice) return
+
+    const aircraft: OwnedAircraft = {
+      id: `ac-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      modelId,
+      status: 'idle',
+      seatConfig: config,
+    }
     const next: GameState = {
       ...state,
-      cash: state.cash - model.price,
+      cash: state.cash - totalPrice,
       fleet: [...state.fleet, aircraft],
       ledger: [
-        { id: `evt-buy-${aircraft.id}`, t: Date.now(), label: `Comprou ${model.name}`, amount: -model.price },
+        { id: `evt-buy-${aircraft.id}`, t: Date.now(), label: `Comprou ${model.name}`, amount: -totalPrice },
         ...state.ledger,
       ].slice(0, 100),
       tutorial: state.tutorial === 'buy_aircraft' ? 'create_route' : state.tutorial,
@@ -84,7 +113,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     persist(next)
   },
 
-  createRoute: (originCode, destCode, aircraftId, ticketPrice) => {
+  createRoute: (originCode, destCode, aircraftId, prices) => {
     const state = get().state
     const origin = findAirport(originCode)
     const dest = findAirport(destCode)
@@ -96,7 +125,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       originCode,
       destCode,
       aircraftId,
-      ticketPrice,
+      prices,
       distanceKm: Math.round(distanceKm(origin, dest)),
       flightTimeHours: 0,
     }
@@ -107,17 +136,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ...state,
       routes: [...state.routes, route],
       tutorial: state.tutorial === 'create_route' ? 'dispatch_flight' : state.tutorial,
-    }
-    set({ state: next })
-    persist(next)
-  },
-
-  updateTicketPrice: (routeId, price) => {
-    const state = get().state
-    if (!state) return
-    const next: GameState = {
-      ...state,
-      routes: state.routes.map((r) => (r.id === routeId ? { ...r, ticketPrice: price } : r)),
     }
     set({ state: next })
     persist(next)

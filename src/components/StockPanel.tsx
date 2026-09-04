@@ -5,6 +5,7 @@ import { marketShares, computeValuation } from '../engine/stockMarket'
 import { formatMoney, formatShares } from '../format'
 import { StockChart } from './StockChart'
 import { Field } from './Field'
+import { NumberInput } from './NumberInput'
 
 export function StockPanel({ state }: { state: GameState }) {
   const doIpo = useGameStore((s) => s.doIpo)
@@ -41,14 +42,7 @@ export function StockPanel({ state }: { state: GameState }) {
             <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
               <Field label="Fatia das ações a vender">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <input
-                    type="number"
-                    style={{ width: 70 }}
-                    min={1}
-                    max={90}
-                    value={floatPct}
-                    onChange={(e) => setFloatPct(Number(e.target.value))}
-                  />
+                  <NumberInput style={{ width: 70 }} min={1} value={floatPct} onChange={setFloatPct} />
                   <span style={{ color: 'var(--text-dim)' }}>%</span>
                 </div>
               </Field>
@@ -65,14 +59,7 @@ export function StockPanel({ state }: { state: GameState }) {
             </p>
             <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
               <Field label="Quantidade de ações">
-                <input
-                  type="number"
-                  style={{ width: 110 }}
-                  min={0}
-                  step={1000}
-                  value={tradeShares}
-                  onChange={(e) => setTradeShares(Number(e.target.value))}
-                />
+                <NumberInput style={{ width: 110 }} min={0} value={tradeShares} onChange={setTradeShares} />
               </Field>
               <button disabled={tradeShares > stock.playerShares} onClick={() => doSellShares(tradeShares)}>
                 Vender ações
