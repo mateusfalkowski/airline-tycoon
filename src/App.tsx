@@ -14,7 +14,7 @@ type Tab = (typeof TABS)[number]
 
 const TAB_ICON: Record<Tab, string> = {
   Rotas: '🛫',
-  Mercado: '🛒',
+  Mercado: '🛩️',
   Bolsa: '📈',
   Extrato: '🧾',
 }
