@@ -1,12 +1,10 @@
 import type { AircraftModel, SeatClass, SeatConfig } from '../types'
 
 export const TAXI_OVERHEAD_HOURS = 0.3
-export const BASE_FUEL_PRICE = 0.7
 
-/** A flight takes its full real-world duration — use the operations manager to run
- *  routes while you're away. */
-export function realFlightMs(flightTimeHours: number): number {
-  return flightTimeHours * 60 * 60 * 1000
+/** Converts a duration in hours to real milliseconds (flights and maintenance both take real time). */
+export function realFlightMs(hours: number): number {
+  return hours * 60 * 60 * 1000
 }
 
 /** Operations manager (auto-dispatch) economics. */
@@ -28,6 +26,9 @@ export function managerFee(revenue: number): number {
 /** Aircraft wear & scheduled inspections. */
 export const WEAR_PER_HOUR = 0.011
 export const CHECK_INTERVAL_HOURS = 150
+/** How long an aircraft is grounded for maintenance (real hours). */
+export const LIGHT_MAINTENANCE_HOURS = 1
+export const INSPECTION_HOURS = 4
 
 /** Cost of a full scheduled inspection: resets the hours counter and clears most wear. */
 export function inspectionCost(modelPrice: number, wear: number): number {
@@ -49,6 +50,11 @@ export const CLASS_FARE_MULT: Record<SeatClass, number> = { economy: 1, business
 
 export function flightTimeHours(distanceKm: number, cruiseSpeedKmh: number): number {
   return distanceKm / cruiseSpeedKmh + TAXI_OVERHEAD_HOURS
+}
+
+/** Fuel a flight burns, in tonnes (1000 kg). */
+export function fuelTonnes(model: AircraftModel, distanceKm: number): number {
+  return (model.fuelBurnPerKm * distanceKm) / 1000
 }
 
 export function fairPrice(distanceKm: number): number {
@@ -136,7 +142,7 @@ export function simulateFlight(
 
   const seatsTotal = totalSeatCount(seatConfig)
   const overallLoadFactor = seatsTotal > 0 ? totalPassengers / seatsTotal : 0
-  const fuelCost = model.fuelBurnPerHour * hours * fuelPrice
+  const fuelCost = fuelTonnes(model, distanceKm) * fuelPrice
   const maintenanceCost = model.maintenancePerHour * hours * maintenanceMultiplier
   const profit = totalRevenue - fuelCost - maintenanceCost
   const reputationDelta = (overallLoadFactor - 0.5) * 0.6

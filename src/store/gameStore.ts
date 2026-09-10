@@ -7,20 +7,21 @@ import { distanceKm } from '../engine/geo'
 import {
   flightTimeHours,
   realFlightMs,
-  BASE_FUEL_PRICE,
   seatUnitsUsed,
   cabinUpfitCost,
   managerCap,
   MANAGER_HIRE_FEE,
   MANAGER_UNLOCK_FLIGHTS,
   CHECK_INTERVAL_HOURS,
+  LIGHT_MAINTENANCE_HOURS,
+  INSPECTION_HOURS,
   inspectionCost,
   lightMaintenanceCost,
 } from '../engine/economy'
 import { createInitialFuel, buyFuel, nextDepotUpgrade } from '../engine/fuel'
 import { tick as runTick, catchUp } from '../engine/simulation'
 import type { FlightLanding } from '../engine/simulation'
-import { createInitialStock, computeValuation, ipo, sellShares, buyBackShares } from '../engine/stockMarket'
+import { createInitialStock, computeValuation, listCompany, STOCK_LISTING_FEE } from '../engine/stockMarket'
 import { loadGame, saveGame, wipeSave } from '../engine/persistence'
 import { INITIAL_TOTAL_SHARES } from '../engine/stockMarket'
 
@@ -48,12 +49,14 @@ function migrateState(saved: GameState): GameState {
     return { ...route, prices: { economy: legacyPrice, business: 0, first: 0 } }
   })
 
+  const rawTutorial = saved.tutorial as string | undefined
+
   return {
     ...saved,
     fleet,
     routes,
     fuel: saved.fuel ?? createInitialFuel(Date.now()),
-    tutorial: saved.tutorial ?? 'done',
+    tutorial: !rawTutorial || rawTutorial === 'stock_intro' ? 'done' : (rawTutorial as TutorialStep),
     flightsCompleted: saved.flightsCompleted ?? 0,
   }
 }
@@ -73,9 +76,7 @@ interface GameStore {
   lightMaintenance: (aircraftId: string) => void
   doTick: () => void
   dismissLanding: (id: string) => void
-  doIpo: (floatPercent: number) => void
-  doSellShares: (shares: number) => void
-  doBuyBackShares: (shares: number) => void
+  listCompany: () => void
   finishTutorial: () => void
   resetGame: () => void
 }
@@ -104,7 +105,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
       version: 1,
       company: { name, hubCode, foundedAt: Date.now(), reputation: 50 },
       cash: STARTING_CASH,
-      fuelPrice: BASE_FUEL_PRICE,
       fuel: createInitialFuel(Date.now()),
       fleet: [],
       routes: [],
@@ -196,7 +196,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       fleet: state.fleet.map((a) =>
         a.id === aircraft.id ? { ...a, status: 'flying', flight: { routeId, departedAt: now, arrivesAt } } : a,
       ),
-      tutorial: state.tutorial === 'dispatch_flight' ? 'stock_intro' : state.tutorial,
+      tutorial: state.tutorial === 'dispatch_flight' ? 'done' : state.tutorial,
     }
     set({ state: next })
     persist(next)
@@ -252,12 +252,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     persist(next)
   },
 
-  buyFuel: (litres) => {
+  buyFuel: (tonnes) => {
     const state = get().state
-    if (!state || litres <= 0) return
-    const affordable = Math.floor(state.cash / state.fuel.price)
+    if (!state || tonnes <= 0) return
+    const affordable = state.cash / state.fuel.price
     const room = state.fuel.capacity - state.fuel.stored
-    const amount = Math.min(litres, affordable, room)
+    const amount = Math.min(tonnes, affordable, room)
     if (amount <= 0) return
     const { fuel, cost } = buyFuel(state.fuel, amount)
     const now = Date.now()
@@ -269,7 +269,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         {
           id: `evt-fuel-${now}`,
           t: now,
-          label: `Comprou ${Math.round(amount).toLocaleString('pt-BR')} L de combustível`,
+          label: `Comprou ${Math.round(amount * 1000).toLocaleString('pt-BR')} kg de combustível`,
           amount: -Math.round(cost),
         },
         ...state.ledger,
@@ -293,7 +293,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         {
           id: `evt-depot-${now}`,
           t: now,
-          label: `Ampliou o depósito para ${upgrade.capacity.toLocaleString('pt-BR')} L`,
+          label: `Ampliou o depósito para ${Math.round(upgrade.capacity * 1000).toLocaleString('pt-BR')} kg`,
           amount: -upgrade.cost,
         },
         ...state.ledger,
@@ -317,10 +317,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ...state,
       cash: state.cash - cost,
       fleet: state.fleet.map((a) =>
-        a.id === aircraftId ? { ...a, wear: a.wear * 0.25, hoursSinceCheck: 0 } : a,
+        a.id === aircraftId
+          ? {
+              ...a,
+              status: 'maintenance',
+              maintenanceKind: 'inspection',
+              maintenanceUntil: now + realFlightMs(INSPECTION_HOURS),
+            }
+          : a,
       ),
       ledger: [
-        { id: `evt-check-${now}`, t: now, label: `Revisão completa de ${model.name}`, amount: -cost },
+        {
+          id: `evt-check-${now}`,
+          t: now,
+          label: `Revisão de ${model.name} (${INSPECTION_HOURS}h)`,
+          amount: -cost,
+        },
         ...state.ledger,
       ].slice(0, 100),
     }
@@ -341,9 +353,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const next: GameState = {
       ...state,
       cash: state.cash - cost,
-      fleet: state.fleet.map((a) => (a.id === aircraftId ? { ...a, wear: a.wear * 0.55 } : a)),
+      fleet: state.fleet.map((a) =>
+        a.id === aircraftId
+          ? {
+              ...a,
+              status: 'maintenance',
+              maintenanceKind: 'light',
+              maintenanceUntil: now + realFlightMs(LIGHT_MAINTENANCE_HOURS),
+            }
+          : a,
+      ),
       ledger: [
-        { id: `evt-lightmx-${now}`, t: now, label: `Manutenção leve de ${model.name}`, amount: -cost },
+        {
+          id: `evt-lightmx-${now}`,
+          t: now,
+          label: `Manutenção leve de ${model.name} (${LIGHT_MAINTENANCE_HOURS}h)`,
+          amount: -cost,
+        },
         ...state.ledger,
       ].slice(0, 100),
     }
@@ -366,50 +392,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set((s) => ({ landings: s.landings.filter((l) => l.id !== id) }))
   },
 
-  doIpo: (floatPercent) => {
+  listCompany: () => {
     const state = get().state
-    if (!state || state.stock.ipoDone) return
-    const { stock, cashGained } = ipo(state, floatPercent)
+    if (!state || state.stock.ipoDone || state.cash < STOCK_LISTING_FEE) return
+    const { stock, cashGained } = listCompany(state)
+    const now = Date.now()
     const next: GameState = {
       ...state,
       stock,
-      cash: state.cash + cashGained,
+      cash: state.cash - STOCK_LISTING_FEE + cashGained,
       ledger: [
-        { id: `evt-ipo-${Date.now()}`, t: Date.now(), label: `IPO: ${floatPercent}% das ações na bolsa`, amount: cashGained },
-        ...state.ledger,
-      ].slice(0, 100),
-    }
-    set({ state: next })
-    persist(next)
-  },
-
-  doSellShares: (shares) => {
-    const state = get().state
-    if (!state) return
-    const { stock, cashGained } = sellShares(state, shares)
-    const next: GameState = {
-      ...state,
-      stock,
-      cash: state.cash + cashGained,
-      ledger: [
-        { id: `evt-sell-${Date.now()}`, t: Date.now(), label: `Vendeu ${shares.toLocaleString('pt-BR')} ações`, amount: cashGained },
-        ...state.ledger,
-      ].slice(0, 100),
-    }
-    set({ state: next })
-    persist(next)
-  },
-
-  doBuyBackShares: (shares) => {
-    const state = get().state
-    if (!state) return
-    const { stock, cashSpent } = buyBackShares(state, shares)
-    const next: GameState = {
-      ...state,
-      stock,
-      cash: state.cash - cashSpent,
-      ledger: [
-        { id: `evt-buyback-${Date.now()}`, t: Date.now(), label: `Recomprou ${shares.toLocaleString('pt-BR')} ações`, amount: -cashSpent },
+        { id: `evt-list-open-${now}`, t: now, label: 'Abertura de capital na bolsa', amount: cashGained - STOCK_LISTING_FEE },
         ...state.ledger,
       ].slice(0, 100),
     }

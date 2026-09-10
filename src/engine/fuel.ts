@@ -1,19 +1,19 @@
 import type { FuelState } from '../types'
 import { clamp } from './economy'
 
-/** How often the spot price moves. */
+/** How often the spot price moves. Prices are $ per tonne (1000 kg); depot amounts are tonnes. */
 export const FUEL_PRICE_INTERVAL_MS = 15 * 60 * 1000
-export const FUEL_MIN_PRICE = 0.35
-export const FUEL_MAX_PRICE = 1.7
-export const FUEL_START_PRICE = 0.7
+export const FUEL_MIN_PRICE = 450
+export const FUEL_MAX_PRICE = 1600
+export const FUEL_START_PRICE = 800
 const HISTORY_LIMIT = 96
 
 export const DEPOT_TIERS: { capacity: number; cost: number }[] = [
-  { capacity: 250_000, cost: 0 },
-  { capacity: 600_000, cost: 900_000 },
-  { capacity: 1_500_000, cost: 2_400_000 },
-  { capacity: 4_000_000, cost: 6_000_000 },
-  { capacity: 10_000_000, cost: 14_000_000 },
+  { capacity: 300, cost: 0 },
+  { capacity: 800, cost: 900_000 },
+  { capacity: 2_000, cost: 2_400_000 },
+  { capacity: 5_000, cost: 6_000_000 },
+  { capacity: 12_000, cost: 14_000_000 },
 ]
 
 export function nextDepotUpgrade(capacity: number): { capacity: number; cost: number } | null {

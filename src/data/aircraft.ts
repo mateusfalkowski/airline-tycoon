@@ -10,7 +10,7 @@ export const AIRCRAFT_MODELS: AircraftModel[] = [
     rangeKm: 1_500,
     cruiseSpeedKmh: 510,
     seats: 70,
-    fuelBurnPerHour: 650,
+    fuelBurnPerKm: 1.6,
     maintenancePerHour: 180,
   },
   {
@@ -22,7 +22,7 @@ export const AIRCRAFT_MODELS: AircraftModel[] = [
     rangeKm: 2_600,
     cruiseSpeedKmh: 830,
     seats: 132,
-    fuelBurnPerHour: 1_450,
+    fuelBurnPerKm: 2.4,
     maintenancePerHour: 320,
   },
   {
@@ -34,7 +34,7 @@ export const AIRCRAFT_MODELS: AircraftModel[] = [
     rangeKm: 6_300,
     cruiseSpeedKmh: 830,
     seats: 180,
-    fuelBurnPerHour: 2_400,
+    fuelBurnPerKm: 2.9,
     maintenancePerHour: 520,
   },
   {
@@ -46,7 +46,7 @@ export const AIRCRAFT_MODELS: AircraftModel[] = [
     rangeKm: 5_400,
     cruiseSpeedKmh: 840,
     seats: 189,
-    fuelBurnPerHour: 2_600,
+    fuelBurnPerKm: 3.1,
     maintenancePerHour: 540,
   },
   {
@@ -58,7 +58,7 @@ export const AIRCRAFT_MODELS: AircraftModel[] = [
     rangeKm: 14_000,
     cruiseSpeedKmh: 900,
     seats: 296,
-    fuelBurnPerHour: 5_800,
+    fuelBurnPerKm: 6.0,
     maintenancePerHour: 1_450,
   },
   {
@@ -70,7 +70,7 @@ export const AIRCRAFT_MODELS: AircraftModel[] = [
     rangeKm: 15_000,
     cruiseSpeedKmh: 910,
     seats: 325,
-    fuelBurnPerHour: 6_100,
+    fuelBurnPerKm: 6.2,
     maintenancePerHour: 1_550,
   },
 ]

@@ -19,7 +19,8 @@ export interface AircraftModel {
   rangeKm: number
   cruiseSpeedKmh: number
   seats: number
-  fuelBurnPerHour: number
+  /** Fuel burn in kg per km flown. */
+  fuelBurnPerKm: number
   maintenancePerHour: number
 }
 
@@ -27,7 +28,9 @@ export type SeatClass = 'economy' | 'business' | 'first'
 
 export type SeatConfig = Record<SeatClass, number>
 
-export type FlightStatus = 'idle' | 'flying'
+export type FlightStatus = 'idle' | 'flying' | 'maintenance'
+
+export type MaintenanceKind = 'light' | 'inspection'
 
 export interface ActiveFlight {
   routeId: string
@@ -48,6 +51,9 @@ export interface OwnedAircraft {
   hoursSinceCheck: number
   /** Total flight-hours flown. */
   totalHours: number
+  /** While status === 'maintenance': what's being done and when it finishes. */
+  maintenanceKind?: MaintenanceKind
+  maintenanceUntil?: number
 }
 
 export interface Route {
@@ -103,13 +109,12 @@ export interface FuelState {
   lastPriceTick: number
 }
 
-export type TutorialStep = 'buy_aircraft' | 'create_route' | 'dispatch_flight' | 'stock_intro' | 'done'
+export type TutorialStep = 'buy_aircraft' | 'create_route' | 'dispatch_flight' | 'done'
 
 export interface GameState {
   version: number
   company: Company
   cash: number
-  fuelPrice: number
   fuel: FuelState
   fleet: OwnedAircraft[]
   routes: Route[]

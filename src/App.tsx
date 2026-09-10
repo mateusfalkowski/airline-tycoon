@@ -28,7 +28,6 @@ const TUTORIAL_TAB: Partial<Record<TutorialStep, Tab>> = {
   buy_aircraft: 'Mercado',
   create_route: 'Rotas',
   dispatch_flight: 'Rotas',
-  stock_intro: 'Bolsa',
 }
 
 function App() {
@@ -101,7 +100,7 @@ function App() {
           {activeTab === 'Rotas' && <RoutesPanel state={state} now={now} tutorial={state.tutorial} />}
           {activeTab === 'Mercado' && <MarketPanel state={state} tutorial={state.tutorial} />}
           {activeTab === 'Combustível' && <FuelPanel state={state} />}
-          {activeTab === 'Manutenção' && <MaintenancePanel state={state} />}
+          {activeTab === 'Manutenção' && <MaintenancePanel state={state} now={now} />}
           {activeTab === 'Bolsa' && <StockPanel state={state} />}
           {activeTab === 'Extrato' && <LedgerPanel state={state} />}
         </div>

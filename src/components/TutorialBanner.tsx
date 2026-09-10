@@ -4,23 +4,18 @@ import { useGameStore } from '../store/gameStore'
 const STEPS: { step: TutorialStep; title: string; body: string }[] = [
   {
     step: 'buy_aircraft',
-    title: 'Passo 1 de 4 — Compre sua primeira aeronave',
+    title: 'Passo 1 de 3 — Compre sua primeira aeronave',
     body: 'Toda companhia começa sem frota. Escolha uma aeronave no Mercado para começar a operar.',
   },
   {
     step: 'create_route',
-    title: 'Passo 2 de 4 — Defina uma rota',
+    title: 'Passo 2 de 3 — Defina uma rota',
     body: 'Clique em "Definir rota" na sua aeronave e escolha origem, destino e o preço da passagem.',
   },
   {
     step: 'dispatch_flight',
-    title: 'Passo 3 de 4 — Despache o voo',
-    body: 'Com a rota criada, clique em "Despachar" para colocar a aeronave no ar. O voo chega em tempo real.',
-  },
-  {
-    step: 'stock_intro',
-    title: 'Passo 4 de 4 — Conheça a bolsa de valores',
-    body: 'Aqui você pode abrir o capital da empresa (IPO) e vender ações para investidores — no começo, bots que reagem à saúde da sua companhia. Quando quiser, clique em "Concluir" para seguir jogando livremente.',
+    title: 'Passo 3 de 3 — Despache o voo',
+    body: 'Com a rota criada, clique em "Despachar". O voo leva o tempo real da rota — contrate um gerente de operações mais tarde para os aviões voarem sozinhos.',
   },
 ]
 

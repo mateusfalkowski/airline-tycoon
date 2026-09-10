@@ -7,6 +7,7 @@ import {
   managerFee,
   realFlightMs,
   flightTimeHours,
+  fuelTonnes,
   WEAR_PER_HOUR,
   CHECK_INTERVAL_HOURS,
 } from './economy'
@@ -43,6 +44,21 @@ export function tick(state: GameState): TickResult {
   const landings: FlightLanding[] = []
 
   let fleet = state.fleet.map((aircraft) => {
+    // Finish maintenance that's run its course.
+    if (aircraft.status === 'maintenance') {
+      if ((aircraft.maintenanceUntil ?? 0) > now) return aircraft
+      const cleared =
+        aircraft.maintenanceKind === 'inspection'
+          ? { ...aircraft, wear: 0, hoursSinceCheck: 0 }
+          : { ...aircraft, wear: aircraft.wear * 0.55 }
+      return {
+        ...cleared,
+        status: 'idle' as const,
+        maintenanceKind: undefined,
+        maintenanceUntil: undefined,
+      }
+    }
+
     if (aircraft.status !== 'flying' || !aircraft.flight) return aircraft
     if (aircraft.flight.arrivesAt > now) return aircraft
 
@@ -56,10 +72,10 @@ export function tick(state: GameState): TickResult {
     }
 
     const hours = flightTimeHours(route.distanceKm, model.cruiseSpeedKmh)
-    const litres = model.fuelBurnPerHour * hours
-    const drawn = drawFuel(fuel, litres)
+    const tonnes = fuelTonnes(model, route.distanceKm)
+    const drawn = drawFuel(fuel, tonnes)
     fuel = drawn.fuel
-    const effectiveFuelPrice = litres > 0 ? drawn.cost / litres : fuel.price
+    const effectiveFuelPrice = tonnes > 0 ? drawn.cost / tonnes : fuel.price
 
     const demand = computeRouteDemand(origin, dest, route.distanceKm)
     const result = simulateFlight(
@@ -130,11 +146,15 @@ export function tick(state: GameState): TickResult {
   }
 
   const botResult = runBotTick(withFleet)
-  const withStock: GameState = { ...withFleet, stock: botResult.stock }
+  const withStock: GameState = {
+    ...withFleet,
+    stock: botResult.stock,
+    cash: withFleet.cash + botResult.cashGained,
+  }
 
   if (botResult.note) {
     withStock.ledger = [
-      { id: nextEventId(), t: now, label: botResult.note, amount: 0 },
+      { id: nextEventId(), t: now, label: botResult.note, amount: botResult.cashGained },
       ...withStock.ledger,
     ].slice(0, 100)
   }

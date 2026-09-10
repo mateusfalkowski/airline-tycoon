@@ -1,24 +1,41 @@
-import { useState } from 'react'
 import type { GameState } from '../types'
 import { useGameStore } from '../store/gameStore'
-import { marketShares, computeValuation } from '../engine/stockMarket'
+import { marketShares, computeValuation, STOCK_LISTING_FEE, MAX_FLOAT } from '../engine/stockMarket'
 import { formatMoney, formatShares } from '../format'
 import { StockChart } from './StockChart'
-import { Field } from './Field'
-import { NumberInput } from './NumberInput'
 
 export function StockPanel({ state }: { state: GameState }) {
-  const doIpo = useGameStore((s) => s.doIpo)
-  const doSellShares = useGameStore((s) => s.doSellShares)
-  const doBuyBackShares = useGameStore((s) => s.doBuyBackShares)
-
-  const [floatPct, setFloatPct] = useState(25)
-  const [tradeShares, setTradeShares] = useState(10_000)
-
+  const listCompany = useGameStore((s) => s.listCompany)
   const { stock } = state
-  const ownershipPct = (stock.playerShares / stock.totalShares) * 100
   const valuation = computeValuation(state)
-  const bots = marketShares(stock)
+
+  if (!stock.ipoDone) {
+    return (
+      <div>
+        <h3>Bolsa de valores</h3>
+        <p style={{ color: 'var(--text-dim)', maxWidth: 480 }}>
+          Abrir o capital custa <strong style={{ color: 'var(--text-h)' }}>{formatMoney(STOCK_LISTING_FEE)}</strong>.
+          A partir daí o mercado coloca suas ações à venda sozinho e a companhia recebe conforme elas são
+          compradas — você não decide quando vender, o mercado se auto-regula.
+        </p>
+        <div style={{ margin: '14px 0', display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+          <Metric label="Valuation atual" value={formatMoney(Math.round(valuation))} />
+          <Metric label="Preço de abertura estimado" value={`$${stock.sharePrice.toFixed(2)}`} />
+        </div>
+        <button
+          className="primary"
+          disabled={state.cash < STOCK_LISTING_FEE}
+          title={state.cash < STOCK_LISTING_FEE ? 'Caixa insuficiente' : undefined}
+          onClick={listCompany}
+        >
+          Abrir capital · {formatMoney(STOCK_LISTING_FEE)}
+        </button>
+      </div>
+    )
+  }
+
+  const ownershipPct = (stock.playerShares / stock.totalShares) * 100
+  const floatedPct = (marketShares(stock) / stock.totalShares) * 100
 
   return (
     <div>
@@ -27,53 +44,16 @@ export function StockPanel({ state }: { state: GameState }) {
         <Metric label="Preço da ação" value={`$${stock.sharePrice.toFixed(2)}`} />
         <Metric label="Valuation" value={formatMoney(Math.round(valuation))} />
         <Metric label="Sua participação" value={`${ownershipPct.toFixed(1)}%`} />
-        <Metric label="Ações com investidores" value={formatShares(bots)} />
+        <Metric label="No mercado" value={`${formatShares(marketShares(stock))} (${floatedPct.toFixed(0)}%)`} />
       </div>
 
       <StockChart history={stock.history} ipoDone={stock.ipoDone} />
 
-      <div style={{ marginTop: 20, display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-        {!stock.ipoDone ? (
-          <div>
-            <p style={{ color: 'var(--text-dim)', maxWidth: 360 }}>
-              Abra o capital da empresa (IPO): venda uma fatia das ações para investidores (bots, por enquanto) e
-              levante caixa imediato.
-            </p>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-              <Field label="Fatia das ações a vender">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <NumberInput style={{ width: 70 }} min={1} value={floatPct} onChange={setFloatPct} />
-                  <span style={{ color: 'var(--text-dim)' }}>%</span>
-                </div>
-              </Field>
-              <button className="primary" onClick={() => doIpo(floatPct)}>
-                Abrir capital
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div>
-            <p style={{ color: 'var(--text-dim)', maxWidth: 420 }}>
-              Venda mais ações para levantar caixa (dilui sua participação) ou recompre ações do mercado para
-              recuperar controle.
-            </p>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-              <Field label="Quantidade de ações">
-                <NumberInput style={{ width: 110 }} min={0} value={tradeShares} onChange={setTradeShares} />
-              </Field>
-              <button disabled={tradeShares > stock.playerShares} onClick={() => doSellShares(tradeShares)}>
-                Vender ações
-              </button>
-              <button
-                disabled={tradeShares > bots || tradeShares * stock.sharePrice > state.cash}
-                onClick={() => doBuyBackShares(tradeShares)}
-              >
-                Recomprar ações
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+      <p style={{ color: 'var(--text-dim)', fontSize: 12.5, marginTop: 16, maxWidth: 520 }}>
+        O mercado regula sozinho a venda das suas ações, colocando lotes à venda ao longo do tempo até cerca de{' '}
+        {Math.round(MAX_FLOAT * 100)}% da companhia. Cada lote comprado entra como caixa para a empresa. Quanto
+        melhor a saúde da companhia, maior o preço — e mais você recebe.
+      </p>
     </div>
   )
 }

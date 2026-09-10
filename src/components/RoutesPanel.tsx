@@ -6,6 +6,7 @@ import { distanceKm } from '../engine/geo'
 import {
   fairPriceForClass,
   flightTimeHours,
+  fuelTonnes,
   estimateLoadFactor,
   managerCap,
   MANAGER_HIRE_FEE,
@@ -68,9 +69,17 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
                 <strong style={{ color: 'var(--text-h)', fontSize: 14.5 }}>{model?.name ?? aircraft.modelId}</strong>
                 <span
                   className="badge"
-                  style={flying ? { color: 'var(--accent)', borderColor: 'var(--accent)' } : undefined}
+                  style={
+                    flying || aircraft.status === 'maintenance'
+                      ? { color: 'var(--accent)', borderColor: 'var(--accent)' }
+                      : undefined
+                  }
                 >
-                  {flying ? `Voando · chega em ${formatCountdown(aircraft.flight!.arrivesAt - now)}` : 'Em solo'}
+                  {flying
+                    ? `Voando · chega em ${formatCountdown(aircraft.flight!.arrivesAt - now)}`
+                    : aircraft.status === 'maintenance'
+                      ? `Em manutenção · pronta em ${formatCountdown((aircraft.maintenanceUntil ?? now) - now)}`
+                      : 'Em solo'}
                 </span>
               </div>
 
@@ -144,7 +153,7 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
                   seatConfig={aircraft.seatConfig}
                   hub={state.company.hubCode}
                   reputation={state.company.reputation}
-                  fuelPrice={state.fuelPrice}
+                  fuelPrice={state.fuel.price}
                   onCancel={() => setEditingAircraft(null)}
                   onCreate={(origin, dest, prices) => {
                     createRoute(origin, dest, aircraft.id, prices)
@@ -202,7 +211,7 @@ function RouteForm({
   })
 
   const hours = flightTimeHours(dist, model.cruiseSpeedKmh)
-  const cost = model.fuelBurnPerHour * hours * fuelPrice + model.maintenancePerHour * hours
+  const cost = fuelTonnes(model, dist) * fuelPrice + model.maintenancePerHour * hours
   const revenue = demand
     ? activeClasses.reduce((sum, cls) => {
         const load = estimateLoadFactor(dist, cls, prices[cls], reputation)

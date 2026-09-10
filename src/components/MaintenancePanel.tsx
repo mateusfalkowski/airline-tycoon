@@ -1,7 +1,7 @@
 import type { GameState } from '../types'
 import { useGameStore } from '../store/gameStore'
 import { findAircraftModel } from '../data/aircraft'
-import { formatMoney } from '../format'
+import { formatCountdown, formatMoney } from '../format'
 import { CHECK_INTERVAL_HOURS, inspectionCost, lightMaintenanceCost } from '../engine/economy'
 
 function wearColor(wear: number): string {
@@ -10,7 +10,7 @@ function wearColor(wear: number): string {
   return 'var(--red)'
 }
 
-export function MaintenancePanel({ state }: { state: GameState }) {
+export function MaintenancePanel({ state, now }: { state: GameState; now: number }) {
   const serviceAircraft = useGameStore((s) => s.serviceAircraft)
   const lightMaintenance = useGameStore((s) => s.lightMaintenance)
 
@@ -23,13 +23,15 @@ export function MaintenancePanel({ state }: { state: GameState }) {
       <h3>Manutenção</h3>
       <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: -8, marginBottom: 14 }}>
         O desgaste sobe a cada hora de voo e encarece a manutenção. A cada {CHECK_INTERVAL_HOURS}h de voo a
-        aeronave precisa de revisão e não decola até ser revisada.
+        aeronave precisa de revisão e não decola até ser revisada. A manutenção também deixa o avião parado
+        algumas horas.
       </p>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {state.fleet.map((aircraft) => {
           const model = findAircraftModel(aircraft.modelId)
           const idle = aircraft.status === 'idle'
+          const inShop = aircraft.status === 'maintenance'
           const checkPct = Math.min(100, (aircraft.hoursSinceCheck / CHECK_INTERVAL_HOURS) * 100)
           const overdue = aircraft.hoursSinceCheck >= CHECK_INTERVAL_HOURS
           const soon = !overdue && checkPct >= 75
@@ -54,14 +56,24 @@ export function MaintenancePanel({ state }: { state: GameState }) {
                 <span
                   className="badge"
                   style={
-                    overdue
-                      ? { color: 'var(--red)', borderColor: 'var(--red)' }
-                      : soon
-                        ? { color: 'var(--gold)', borderColor: 'var(--gold)' }
-                        : undefined
+                    inShop
+                      ? { color: 'var(--accent)', borderColor: 'var(--accent)' }
+                      : overdue
+                        ? { color: 'var(--red)', borderColor: 'var(--red)' }
+                        : soon
+                          ? { color: 'var(--gold)', borderColor: 'var(--gold)' }
+                          : undefined
                   }
                 >
-                  {overdue ? 'Revisão pendente' : soon ? 'Revisão em breve' : 'OK'}
+                  {inShop
+                    ? `${aircraft.maintenanceKind === 'inspection' ? 'Em revisão' : 'Em manutenção'} · pronta em ${formatCountdown((aircraft.maintenanceUntil ?? now) - now)}`
+                    : aircraft.status === 'flying'
+                      ? 'Voando'
+                      : overdue
+                        ? 'Revisão pendente'
+                        : soon
+                          ? 'Revisão em breve'
+                          : 'OK'}
                 </span>
               </div>
 
@@ -71,9 +83,7 @@ export function MaintenancePanel({ state }: { state: GameState }) {
                 pct={checkPct}
                 color={overdue ? 'var(--red)' : 'var(--accent)'}
               />
-              <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>
-                Total voado: {aircraft.totalHours.toFixed(1)}h
-              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>Total voado: {aircraft.totalHours.toFixed(1)}h</div>
 
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button
