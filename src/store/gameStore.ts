@@ -16,6 +16,7 @@ import {
   maintenanceHours,
   inspectionCost,
   lightMaintenanceCost,
+  resaleValue,
 } from '../engine/economy'
 import { createInitialFuel, buyFuel, nextDepotUpgrade } from '../engine/fuel'
 import { tick as runTick, catchUp, dispatchOutcome } from '../engine/simulation'
@@ -67,6 +68,7 @@ interface GameStore {
   init: () => void
   createCompany: (name: string, hubCode: string) => void
   buyAircraft: (modelId: string, seatConfig?: SeatConfig) => void
+  sellAircraft: (aircraftId: string) => void
   createRoute: (originCode: string, destCode: string, aircraftId: string, prices: Record<SeatClass, number>) => void
   updateRoutePrices: (routeId: string, prices: Record<SeatClass, number>) => void
   deleteRoute: (routeId: string) => void
@@ -150,6 +152,29 @@ export const useGameStore = create<GameStore>((set, get) => ({
         ...state.ledger,
       ].slice(0, 100),
       tutorial: state.tutorial === 'buy_aircraft' ? 'create_route' : state.tutorial,
+    }
+    set({ state: next })
+    persist(next)
+  },
+
+  sellAircraft: (aircraftId) => {
+    const state = get().state
+    if (!state) return
+    const aircraft = state.fleet.find((a) => a.id === aircraftId)
+    if (!aircraft || aircraft.status !== 'idle') return
+    const model = findAircraftModel(aircraft.modelId)
+    if (!model) return
+    const value = resaleValue(model.price, aircraft.totalHours, aircraft.wear)
+    const now = Date.now()
+    const next: GameState = {
+      ...state,
+      cash: state.cash + value,
+      fleet: state.fleet.filter((a) => a.id !== aircraftId),
+      routes: state.routes.filter((r) => r.aircraftId !== aircraftId),
+      ledger: [
+        { id: `evt-sell-${now}`, t: now, label: `Vendeu ${model.name} (usado)`, amount: value },
+        ...state.ledger,
+      ].slice(0, 100),
     }
     set({ state: next })
     persist(next)

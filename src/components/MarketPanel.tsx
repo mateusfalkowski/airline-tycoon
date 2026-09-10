@@ -1,8 +1,15 @@
 import { useState } from 'react'
-import { AIRCRAFT_MODELS } from '../data/aircraft'
+import { AIRCRAFT_MODELS, findAircraftModel } from '../data/aircraft'
 import { useGameStore } from '../store/gameStore'
 import { formatMoney } from '../format'
-import { SEAT_UNIT, SEAT_CLASSES, seatUnitsUsed, totalSeatCount, cabinUpfitCost } from '../engine/economy'
+import {
+  SEAT_UNIT,
+  SEAT_CLASSES,
+  seatUnitsUsed,
+  totalSeatCount,
+  cabinUpfitCost,
+  resaleValue,
+} from '../engine/economy'
 import type { AircraftModel, GameState, SeatClass, SeatConfig, TutorialStep } from '../types'
 import { Field } from './Field'
 import { NumberInput } from './NumberInput'
@@ -22,11 +29,75 @@ const CLASS_LABEL: Record<SeatClass, string> = {
 
 export function MarketPanel({ state, tutorial }: { state: GameState; tutorial?: TutorialStep }) {
   const buyAircraft = useGameStore((s) => s.buyAircraft)
+  const sellAircraft = useGameStore((s) => s.sellAircraft)
   const highlightBuy = tutorial === 'buy_aircraft'
   const [configuringId, setConfiguringId] = useState<string | null>(null)
+  const [confirmSellId, setConfirmSellId] = useState<string | null>(null)
 
   return (
     <div>
+      {state.fleet.length > 0 && (
+        <div style={{ marginBottom: 22 }}>
+          <h3>Minha frota</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {state.fleet.map((ac) => {
+              const m = findAircraftModel(ac.modelId)
+              const value = m ? resaleValue(m.price, ac.totalHours, ac.wear) : 0
+              const canSell = ac.status === 'idle'
+              return (
+                <div
+                  key={ac.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    flexWrap: 'wrap',
+                    background: 'var(--panel-alt)',
+                    border: '1px solid var(--border-soft)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '10px 12px',
+                  }}
+                >
+                  <strong style={{ color: 'var(--text-h)', fontSize: 13.5 }}>{m?.name ?? ac.modelId}</strong>
+                  <span className="stat-chip">
+                    {ac.totalHours.toFixed(0)}h · desgaste {Math.round(ac.wear * 100)}%
+                  </span>
+                  <span className="stat-chip">
+                    {ac.status === 'flying' ? 'voando' : ac.status === 'maintenance' ? 'em manutenção' : 'em solo'}
+                  </span>
+                  {confirmSellId === ac.id ? (
+                    <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <span style={{ fontSize: 11, color: 'var(--red)' }}>Vender e remover a rota?</span>
+                      <button
+                        style={{ fontSize: 12, borderColor: 'var(--red)' }}
+                        onClick={() => {
+                          sellAircraft(ac.id)
+                          setConfirmSellId(null)
+                        }}
+                      >
+                        Confirmar · {formatMoney(value)}
+                      </button>
+                      <button style={{ fontSize: 12 }} onClick={() => setConfirmSellId(null)}>
+                        Não
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      style={{ marginLeft: 'auto', fontSize: 12 }}
+                      disabled={!canSell}
+                      title={!canSell ? 'A aeronave precisa estar em solo' : undefined}
+                      onClick={() => setConfirmSellId(ac.id)}
+                    >
+                      Vender · {formatMoney(value)}
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       <h3>Mercado de aeronaves</h3>
       <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
         {AIRCRAFT_MODELS.map((m) => (

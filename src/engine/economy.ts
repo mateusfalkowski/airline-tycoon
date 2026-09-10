@@ -31,6 +31,13 @@ export function fixedCostPerHour(modelPrice: number): number {
   return modelPrice * FIXED_COST_RATE
 }
 
+/** What a used aircraft fetches: starts at 70% of list, dropping with hours flown and wear. */
+export function resaleValue(modelPrice: number, totalHours: number, wear: number): number {
+  const hoursFactor = 1 - Math.min(0.45, totalHours / 3000)
+  const wearFactor = 1 - wear * 0.3
+  return Math.round(modelPrice * 0.7 * hoursFactor * wearFactor)
+}
+
 /** Aircraft wear & scheduled inspections. */
 export const WEAR_PER_HOUR = 0.011
 export const CHECK_INTERVAL_HOURS = 150
