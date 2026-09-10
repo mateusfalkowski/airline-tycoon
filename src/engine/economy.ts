@@ -1,4 +1,4 @@
-import type { AircraftModel, SeatClass, SeatConfig } from '../types'
+import type { AircraftCategory, AircraftModel, SeatClass, SeatConfig } from '../types'
 
 export const TAXI_OVERHEAD_HOURS = 0.3
 
@@ -26,9 +26,16 @@ export function managerFee(revenue: number): number {
 /** Aircraft wear & scheduled inspections. */
 export const WEAR_PER_HOUR = 0.011
 export const CHECK_INTERVAL_HOURS = 150
-/** How long an aircraft is grounded for maintenance (real hours). */
-export const LIGHT_MAINTENANCE_HOURS = 1
-export const INSPECTION_HOURS = 4
+
+/** How long an aircraft is grounded for maintenance (real hours) — bigger jets take longer. */
+export function maintenanceHours(category: AircraftCategory, kind: 'light' | 'inspection'): number {
+  const table = {
+    regional: { light: 0.75, inspection: 3 },
+    narrowbody: { light: 1.25, inspection: 5 },
+    widebody: { light: 2, inspection: 8 },
+  }
+  return table[category][kind]
+}
 
 /** Cost of a full scheduled inspection: resets the hours counter and clears most wear. */
 export function inspectionCost(modelPrice: number, wear: number): number {

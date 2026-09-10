@@ -6,6 +6,7 @@ import { SEAT_UNIT, SEAT_CLASSES, seatUnitsUsed, totalSeatCount, cabinUpfitCost 
 import type { AircraftModel, GameState, SeatClass, SeatConfig, TutorialStep } from '../types'
 import { Field } from './Field'
 import { NumberInput } from './NumberInput'
+import { AircraftArt } from './AircraftArt'
 
 const CATEGORY_LABEL: Record<string, string> = {
   regional: 'Regional',
@@ -44,6 +45,10 @@ export function MarketPanel({ state, tutorial }: { state: GameState; tutorial?: 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
               <strong style={{ color: 'var(--text-h)', fontSize: 14.5 }}>{m.name}</strong>
               <span className="badge">{CATEGORY_LABEL[m.category]}</span>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '2px 0 4px' }}>
+              <AircraftArt category={m.category} width={150} />
             </div>
 
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>

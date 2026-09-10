@@ -13,8 +13,7 @@ import {
   MANAGER_HIRE_FEE,
   MANAGER_UNLOCK_FLIGHTS,
   CHECK_INTERVAL_HOURS,
-  LIGHT_MAINTENANCE_HOURS,
-  INSPECTION_HOURS,
+  maintenanceHours,
   inspectionCost,
   lightMaintenanceCost,
 } from '../engine/economy'
@@ -324,6 +323,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const cost = inspectionCost(model.price, aircraft.wear)
     if (state.cash < cost) return
     const now = Date.now()
+    const hrs = maintenanceHours(model.category, 'inspection')
     const next: GameState = {
       ...state,
       cash: state.cash - cost,
@@ -333,17 +333,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
               ...a,
               status: 'maintenance',
               maintenanceKind: 'inspection',
-              maintenanceUntil: now + realFlightMs(INSPECTION_HOURS),
+              maintenanceUntil: now + realFlightMs(hrs),
             }
           : a,
       ),
       ledger: [
-        {
-          id: `evt-check-${now}`,
-          t: now,
-          label: `Revisão de ${model.name} (${INSPECTION_HOURS}h)`,
-          amount: -cost,
-        },
+        { id: `evt-check-${now}`, t: now, label: `Revisão de ${model.name} (${hrs}h)`, amount: -cost },
         ...state.ledger,
       ].slice(0, 100),
     }
@@ -361,6 +356,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const cost = lightMaintenanceCost(model.price, aircraft.wear)
     if (state.cash < cost) return
     const now = Date.now()
+    const hrs = maintenanceHours(model.category, 'light')
     const next: GameState = {
       ...state,
       cash: state.cash - cost,
@@ -370,17 +366,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
               ...a,
               status: 'maintenance',
               maintenanceKind: 'light',
-              maintenanceUntil: now + realFlightMs(LIGHT_MAINTENANCE_HOURS),
+              maintenanceUntil: now + realFlightMs(hrs),
             }
           : a,
       ),
       ledger: [
-        {
-          id: `evt-lightmx-${now}`,
-          t: now,
-          label: `Manutenção leve de ${model.name} (${LIGHT_MAINTENANCE_HOURS}h)`,
-          amount: -cost,
-        },
+        { id: `evt-lightmx-${now}`, t: now, label: `Manutenção leve de ${model.name} (${hrs}h)`, amount: -cost },
         ...state.ledger,
       ].slice(0, 100),
     }

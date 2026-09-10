@@ -2,7 +2,7 @@ import type { GameState } from '../types'
 import { useGameStore } from '../store/gameStore'
 import { findAircraftModel } from '../data/aircraft'
 import { formatCountdown, formatMoney } from '../format'
-import { CHECK_INTERVAL_HOURS, inspectionCost, lightMaintenanceCost } from '../engine/economy'
+import { CHECK_INTERVAL_HOURS, maintenanceHours, inspectionCost, lightMaintenanceCost } from '../engine/economy'
 
 function wearColor(wear: number): string {
   if (wear < 0.4) return 'var(--green)'
@@ -23,8 +23,8 @@ export function MaintenancePanel({ state, now }: { state: GameState; now: number
       <h3>Manutenção</h3>
       <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: -8, marginBottom: 14 }}>
         O desgaste sobe a cada hora de voo e encarece a manutenção. A cada {CHECK_INTERVAL_HOURS}h de voo a
-        aeronave precisa de revisão e não decola até ser revisada. A manutenção também deixa o avião parado
-        algumas horas.
+        aeronave precisa de revisão e não decola até ser revisada. A manutenção deixa o avião parado algumas
+        horas — mais tempo para jatos maiores.
       </p>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -37,6 +37,8 @@ export function MaintenancePanel({ state, now }: { state: GameState; now: number
           const soon = !overdue && checkPct >= 75
           const checkCost = model ? inspectionCost(model.price, aircraft.wear) : 0
           const lightCost = model ? lightMaintenanceCost(model.price, aircraft.wear) : 0
+          const lightHrs = model ? maintenanceHours(model.category, 'light') : 0
+          const checkHrs = model ? maintenanceHours(model.category, 'inspection') : 0
 
           return (
             <div
@@ -90,7 +92,7 @@ export function MaintenancePanel({ state, now }: { state: GameState; now: number
                   disabled={!idle || aircraft.wear < 0.02 || state.cash < lightCost}
                   onClick={() => lightMaintenance(aircraft.id)}
                 >
-                  Manutenção leve · {formatMoney(lightCost)}
+                  Manutenção leve · {formatMoney(lightCost)} · {lightHrs}h
                 </button>
                 <button
                   className={overdue ? 'primary' : undefined}
@@ -98,7 +100,7 @@ export function MaintenancePanel({ state, now }: { state: GameState; now: number
                   title={!idle ? 'A aeronave precisa estar em solo' : undefined}
                   onClick={() => serviceAircraft(aircraft.id)}
                 >
-                  Fazer revisão · {formatMoney(checkCost)}
+                  Fazer revisão · {formatMoney(checkCost)} · {checkHrs}h
                 </button>
               </div>
             </div>
