@@ -31,6 +31,7 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
   const dispatchFlight = useGameStore((s) => s.dispatchFlight)
   const toggleAutoManage = useGameStore((s) => s.toggleAutoManage)
   const [editingAircraft, setEditingAircraft] = useState<string | null>(null)
+  const [explainManager, setExplainManager] = useState<string | null>(null)
   const highlightDefineRoute = tutorial === 'create_route'
   const highlightDispatch = tutorial === 'dispatch_flight'
 
@@ -129,16 +130,54 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
                         🤖 Limite de gerentes ({managersUsed}/{managerLimit})
                       </button>
                     ) : (
-                      <button
-                        style={{ fontSize: 12 }}
-                        disabled={state.cash < MANAGER_HIRE_FEE}
-                        title={state.cash < MANAGER_HIRE_FEE ? 'Caixa insuficiente' : undefined}
-                        onClick={() => toggleAutoManage(aircraft.id)}
-                      >
-                        🤖 Contratar gerente · {formatMoney(MANAGER_HIRE_FEE)}
+                      <button style={{ fontSize: 12 }} onClick={() => setExplainManager(aircraft.id)}>
+                        🤖 Automatizar decolagens
                       </button>
                     )}
                   </div>
+
+                  {explainManager === aircraft.id && !aircraft.autoManaged && (
+                    <div
+                      style={{
+                        border: '1px solid var(--border-soft)',
+                        borderRadius: 'var(--radius-sm)',
+                        background: 'var(--panel)',
+                        padding: 12,
+                        fontSize: 12.5,
+                        color: 'var(--text)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 8,
+                      }}
+                    >
+                      <strong style={{ color: 'var(--text-h)' }}>Gerente de operações</strong>
+                      <p style={{ margin: 0, color: 'var(--text-dim)' }}>
+                        Um gerente contratado cuida desse avião: assim que ele pousa e está com a revisão em dia,
+                        o gerente já despacha o próximo voo da rota — mesmo com o jogo fechado. Você não precisa
+                        voltar pra clicar em "Despachar".
+                      </p>
+                      <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--text-dim)' }}>
+                        <li>Contratação: <strong style={{ color: 'var(--text-h)' }}>{formatMoney(MANAGER_HIRE_FEE)}</strong> (uma vez, sem reembolso)</li>
+                        <li>Por voo automático: <strong style={{ color: 'var(--text-h)' }}>$1.000 + 4% da receita</strong>, tirado do lucro do voo</li>
+                        <li>Despachar manualmente rende mais — a automação é conveniência paga</li>
+                        <li>Gerentes disponíveis: {managersUsed}/{managerLimit}</li>
+                      </ul>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          className="primary"
+                          disabled={state.cash < MANAGER_HIRE_FEE}
+                          title={state.cash < MANAGER_HIRE_FEE ? 'Caixa insuficiente' : undefined}
+                          onClick={() => {
+                            toggleAutoManage(aircraft.id)
+                            setExplainManager(null)
+                          }}
+                        >
+                          Contratar · {formatMoney(MANAGER_HIRE_FEE)}
+                        </button>
+                        <button onClick={() => setExplainManager(null)}>Agora não</button>
+                      </div>
+                    </div>
+                  )}
 
                   {aircraft.autoManaged && (
                     <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>

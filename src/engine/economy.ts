@@ -59,9 +59,12 @@ export function flightTimeHours(distanceKm: number, cruiseSpeedKmh: number): num
   return distanceKm / cruiseSpeedKmh + TAXI_OVERHEAD_HOURS
 }
 
-/** Fuel a flight burns, in tonnes (1000 kg). */
+/** Extra "distance" charged for the fuel-heavy taxi, takeoff and climb of every flight. */
+export const TAKEOFF_KM_EQUIV = 250
+
+/** Fuel a flight burns, in tonnes (1000 kg) — cruise plus the takeoff/climb overhead. */
 export function fuelTonnes(model: AircraftModel, distanceKm: number): number {
-  return (model.fuelBurnPerKm * distanceKm) / 1000
+  return (model.fuelBurnPerKm * (distanceKm + TAKEOFF_KM_EQUIV)) / 1000
 }
 
 export function fairPrice(distanceKm: number): number {
