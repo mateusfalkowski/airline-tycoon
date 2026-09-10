@@ -41,6 +41,7 @@ export interface OwnedAircraft {
   status: FlightStatus
   seatConfig: SeatConfig
   flight?: ActiveFlight
+  autoManaged?: boolean
 }
 
 export interface Route {
@@ -94,4 +95,5 @@ export interface GameState {
   ledger: FinanceEvent[]
   lastSeen: number
   tutorial: TutorialStep
+  flightsCompleted: number
 }

@@ -7,6 +7,7 @@ import { RoutesPanel } from './components/RoutesPanel'
 import { StockPanel } from './components/StockPanel'
 import { LedgerPanel } from './components/LedgerPanel'
 import { TutorialBanner } from './components/TutorialBanner'
+import { LandingToasts } from './components/LandingToasts'
 import type { TutorialStep } from './types'
 
 const TABS = ['Rotas', 'Mercado', 'Bolsa', 'Extrato'] as const
@@ -99,6 +100,8 @@ function App() {
           {activeTab === 'Extrato' && <LedgerPanel state={state} />}
         </div>
       </main>
+
+      <LandingToasts />
     </div>
   )
 }

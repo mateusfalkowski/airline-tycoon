@@ -4,8 +4,18 @@ import type { TutorialStep } from '../types'
 import { findAircraftModel } from '../data/aircraft'
 import { findAirport } from '../data/airports'
 import { distanceKm } from '../engine/geo'
-import { flightTimeHours, BASE_FUEL_PRICE, seatUnitsUsed, cabinUpfitCost } from '../engine/economy'
+import {
+  flightTimeHours,
+  realFlightMs,
+  BASE_FUEL_PRICE,
+  seatUnitsUsed,
+  cabinUpfitCost,
+  managerCap,
+  MANAGER_HIRE_FEE,
+  MANAGER_UNLOCK_FLIGHTS,
+} from '../engine/economy'
 import { tick as runTick, catchUp } from '../engine/simulation'
+import type { FlightLanding } from '../engine/simulation'
 import { createInitialStock, computeValuation, ipo, sellShares, buyBackShares } from '../engine/stockMarket'
 import { loadGame, saveGame, wipeSave } from '../engine/persistence'
 import { INITIAL_TOTAL_SHARES } from '../engine/stockMarket'
@@ -29,17 +39,26 @@ function migrateState(saved: GameState): GameState {
     return { ...route, prices: { economy: legacyPrice, business: 0, first: 0 } }
   })
 
-  return { ...saved, fleet, routes, tutorial: saved.tutorial ?? 'done' }
+  return {
+    ...saved,
+    fleet,
+    routes,
+    tutorial: saved.tutorial ?? 'done',
+    flightsCompleted: saved.flightsCompleted ?? 0,
+  }
 }
 
 interface GameStore {
   state: GameState | null
+  landings: FlightLanding[]
   init: () => void
   createCompany: (name: string, hubCode: string) => void
   buyAircraft: (modelId: string, seatConfig?: SeatConfig) => void
   createRoute: (originCode: string, destCode: string, aircraftId: string, prices: Record<SeatClass, number>) => void
   dispatchFlight: (routeId: string) => void
+  toggleAutoManage: (aircraftId: string) => void
   doTick: () => void
+  dismissLanding: (id: string) => void
   doIpo: (floatPercent: number) => void
   doSellShares: (shares: number) => void
   doBuyBackShares: (shares: number) => void
@@ -53,12 +72,13 @@ function persist(state: GameState) {
 
 export const useGameStore = create<GameStore>((set, get) => ({
   state: null,
+  landings: [],
 
   init: () => {
     const saved = loadGame()
     if (saved) {
-      const caughtUp = catchUp(migrateState(saved))
-      set({ state: caughtUp })
+      const { state: caughtUp, landings } = catchUp(migrateState(saved))
+      set({ state: caughtUp, landings: landings.slice(-4) })
       persist(caughtUp)
     }
   },
@@ -77,6 +97,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ledger: [{ id: 'evt-founding', t: Date.now(), label: `${name} foi fundada em ${hubCode}`, amount: STARTING_CASH }],
       lastSeen: Date.now(),
       tutorial: 'buy_aircraft',
+      flightsCompleted: 0,
     }
     set({ state: newState })
     persist(newState)
@@ -150,7 +171,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!aircraft || aircraft.status !== 'idle') return
 
     const now = Date.now()
-    const arrivesAt = now + route.flightTimeHours * 60 * 60 * 1000
+    const arrivesAt = now + realFlightMs(route.flightTimeHours)
     const next: GameState = {
       ...state,
       fleet: state.fleet.map((a) =>
@@ -162,12 +183,69 @@ export const useGameStore = create<GameStore>((set, get) => ({
     persist(next)
   },
 
+  toggleAutoManage: (aircraftId) => {
+    const state = get().state
+    if (!state) return
+    const aircraft = state.fleet.find((a) => a.id === aircraftId)
+    if (!aircraft) return
+    const model = findAircraftModel(aircraft.modelId)
+    const name = model?.name ?? aircraft.modelId
+    const now = Date.now()
+
+    if (aircraft.autoManaged) {
+      const next: GameState = {
+        ...state,
+        fleet: state.fleet.map((a) => (a.id === aircraftId ? { ...a, autoManaged: false } : a)),
+        ledger: [
+          { id: `evt-mgr-off-${now}`, t: now, label: `Dispensou o gerente de operações de ${name}`, amount: 0 },
+          ...state.ledger,
+        ].slice(0, 100),
+      }
+      set({ state: next })
+      persist(next)
+      return
+    }
+
+    const managersUsed = state.fleet.filter((a) => a.autoManaged).length
+    if (
+      state.flightsCompleted < MANAGER_UNLOCK_FLIGHTS ||
+      managersUsed >= managerCap(state.flightsCompleted) ||
+      state.cash < MANAGER_HIRE_FEE
+    ) {
+      return
+    }
+
+    const next: GameState = {
+      ...state,
+      cash: state.cash - MANAGER_HIRE_FEE,
+      fleet: state.fleet.map((a) => (a.id === aircraftId ? { ...a, autoManaged: true } : a)),
+      ledger: [
+        {
+          id: `evt-mgr-on-${now}`,
+          t: now,
+          label: `Contratou gerente de operações para ${name}`,
+          amount: -MANAGER_HIRE_FEE,
+        },
+        ...state.ledger,
+      ].slice(0, 100),
+    }
+    set({ state: next })
+    persist(next)
+  },
+
   doTick: () => {
     const state = get().state
     if (!state) return
-    const next = runTick(state)
-    set({ state: next })
+    const { state: next, landings } = runTick(state)
+    set((s) => ({
+      state: next,
+      landings: landings.length ? [...s.landings, ...landings].slice(-4) : s.landings,
+    }))
     persist(next)
+  },
+
+  dismissLanding: (id) => {
+    set((s) => ({ landings: s.landings.filter((l) => l.id !== id) }))
   },
 
   doIpo: (floatPercent) => {
@@ -231,7 +309,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   resetGame: () => {
     wipeSave()
-    set({ state: null })
+    set({ state: null, landings: [] })
   },
 }))
 

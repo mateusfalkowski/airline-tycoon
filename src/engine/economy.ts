@@ -3,6 +3,28 @@ import type { AircraftModel, SeatClass, SeatConfig } from '../types'
 export const TAXI_OVERHEAD_HOURS = 0.3
 export const BASE_FUEL_PRICE = 0.7
 
+/** A flight takes its full real-world duration — use the operations manager to run
+ *  routes while you're away. */
+export function realFlightMs(flightTimeHours: number): number {
+  return flightTimeHours * 60 * 60 * 1000
+}
+
+/** Operations manager (auto-dispatch) economics. */
+export const MANAGER_HIRE_FEE = 180_000
+export const MANAGER_FLAT_FEE = 1_000
+export const MANAGER_REVENUE_CUT = 0.04
+export const MANAGER_UNLOCK_FLIGHTS = 12
+
+/** How many aircraft you may put on auto-dispatch, given completed flights. */
+export function managerCap(flightsCompleted: number): number {
+  return 1 + Math.floor(flightsCompleted / 20)
+}
+
+/** Per-flight cost of an auto-dispatched flight, taken out of that flight's profit. */
+export function managerFee(revenue: number): number {
+  return MANAGER_FLAT_FEE + MANAGER_REVENUE_CUT * revenue
+}
+
 export const SEAT_CLASSES: SeatClass[] = ['economy', 'business', 'first']
 
 export const SEAT_UNIT: Record<SeatClass, number> = { economy: 1, business: 2, first: 4 }
@@ -21,6 +43,13 @@ export function fairPrice(distanceKm: number): number {
 
 export function fairPriceForClass(distanceKm: number, cls: SeatClass): number {
   return fairPrice(distanceKm) * CLASS_FARE_MULT[cls]
+}
+
+/** Expected load factor for a class at a given price (no random noise) — used for UI previews. */
+export function estimateLoadFactor(distanceKm: number, cls: SeatClass, price: number, reputation: number): number {
+  const priceRatio = price / fairPriceForClass(distanceKm, cls)
+  const reputationFactor = 0.6 + (reputation / 100) * 0.4
+  return clamp(reputationFactor * (1.15 - 0.5 * (priceRatio - 1)), 0.05, 0.98)
 }
 
 export function seatUnitsUsed(config: SeatConfig): number {

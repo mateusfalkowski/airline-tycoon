@@ -1,7 +1,7 @@
-import type { GameState, FinanceEvent } from '../types'
+import type { GameState, FinanceEvent, OwnedAircraft } from '../types'
 import { findAircraftModel } from '../data/aircraft'
 import { findAirport } from '../data/airports'
-import { simulateFlight, clamp } from './economy'
+import { simulateFlight, clamp, managerFee, realFlightMs } from './economy'
 import { computeRouteDemand } from './demand'
 import { runBotTick } from './stockMarket'
 
@@ -11,13 +11,28 @@ function nextEventId(): string {
   return `evt-${Date.now()}-${eventCounter}`
 }
 
-export function tick(state: GameState): GameState {
+export interface FlightLanding {
+  id: string
+  routeLabel: string
+  passengers: number
+  loadFactor: number
+  profit: number
+}
+
+export interface TickResult {
+  state: GameState
+  landings: FlightLanding[]
+}
+
+export function tick(state: GameState): TickResult {
   const now = Date.now()
   let cash = state.cash
   let reputation = state.company.reputation
+  let flightsCompleted = state.flightsCompleted
   const ledger: FinanceEvent[] = []
+  const landings: FlightLanding[] = []
 
-  const fleet = state.fleet.map((aircraft) => {
+  let fleet = state.fleet.map((aircraft) => {
     if (aircraft.status !== 'flying' || !aircraft.flight) return aircraft
     if (aircraft.flight.arrivesAt > now) return aircraft
 
@@ -40,17 +55,42 @@ export function tick(state: GameState): GameState {
       reputation,
       state.fuelPrice,
     )
-    cash += result.profit
-    reputation = clamp(reputation + result.reputationDelta, 0, 100)
 
+    const fee = aircraft.autoManaged ? managerFee(result.revenue) : 0
+    const netProfit = result.profit - fee
+    cash += netProfit
+    reputation = clamp(reputation + result.reputationDelta, 0, 100)
+    flightsCompleted += 1
+
+    const eventId = nextEventId()
+    const auto = aircraft.autoManaged ? ` (auto · gerente −${Math.round(fee).toLocaleString('en-US')})` : ''
     ledger.push({
-      id: nextEventId(),
+      id: eventId,
       t: now,
-      label: `Voo ${origin.code}→${dest.code}: ${result.passengers} pax, ${Math.round(result.loadFactor * 100)}% ocupação`,
-      amount: Math.round(result.profit),
+      label: `Voo ${origin.code}→${dest.code}: ${result.passengers} pax, ${Math.round(result.loadFactor * 100)}% ocupação${auto}`,
+      amount: Math.round(netProfit),
+    })
+    landings.push({
+      id: eventId,
+      routeLabel: `${origin.code} → ${dest.code}`,
+      passengers: result.passengers,
+      loadFactor: result.loadFactor,
+      profit: Math.round(netProfit),
     })
 
     return { ...aircraft, status: 'idle' as const, flight: undefined }
+  })
+
+  // Auto-dispatch: managed aircraft that are idle with a route take off again immediately.
+  fleet = fleet.map((aircraft): OwnedAircraft => {
+    if (!aircraft.autoManaged || aircraft.status !== 'idle') return aircraft
+    const route = state.routes.find((r) => r.aircraftId === aircraft.id)
+    if (!route) return aircraft
+    return {
+      ...aircraft,
+      status: 'flying',
+      flight: { routeId: route.id, departedAt: now, arrivesAt: now + realFlightMs(route.flightTimeHours) },
+    }
   })
 
   const withFleet: GameState = {
@@ -60,6 +100,7 @@ export function tick(state: GameState): GameState {
     company: { ...state.company, reputation },
     ledger: [...ledger, ...state.ledger].slice(0, 100),
     lastSeen: now,
+    flightsCompleted,
   }
 
   const botResult = runBotTick(withFleet)
@@ -72,10 +113,10 @@ export function tick(state: GameState): GameState {
     ].slice(0, 100)
   }
 
-  return withStock
+  return { state: withStock, landings }
 }
 
 /** Fast-forwards a state loaded after time away, resolving any flights that already landed. */
-export function catchUp(state: GameState): GameState {
+export function catchUp(state: GameState): TickResult {
   return tick(state)
 }
