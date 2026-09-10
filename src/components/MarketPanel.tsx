@@ -6,7 +6,7 @@ import { SEAT_UNIT, SEAT_CLASSES, seatUnitsUsed, totalSeatCount, cabinUpfitCost 
 import type { AircraftModel, GameState, SeatClass, SeatConfig, TutorialStep } from '../types'
 import { Field } from './Field'
 import { NumberInput } from './NumberInput'
-import { AircraftArt } from './AircraftArt'
+import { AircraftImage } from './AircraftArt'
 
 const CATEGORY_LABEL: Record<string, string> = {
   regional: 'Regional',
@@ -48,18 +48,27 @@ export function MarketPanel({ state, tutorial }: { state: GameState; tutorial?: 
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'center', padding: '2px 0 4px' }}>
-              <AircraftArt category={m.category} width={150} />
+              <AircraftImage modelId={m.id} category={m.category} width={200} />
             </div>
 
-            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '6px 16px', flexWrap: 'wrap' }}>
               <span className="stat-chip">
-                Alcance <strong>{m.rangeKm.toLocaleString('pt-BR')} km</strong>
+                Preço <strong>{formatMoney(m.price)}</strong>
               </span>
               <span className="stat-chip">
                 Assentos <strong>{m.seats}</strong>
               </span>
               <span className="stat-chip">
-                Preço <strong>{formatMoney(m.price)}</strong>
+                Alcance <strong>{m.rangeKm.toLocaleString('pt-BR')} km</strong>
+              </span>
+              <span className="stat-chip">
+                Velocidade <strong>{m.cruiseSpeedKmh.toLocaleString('pt-BR')} km/h</strong>
+              </span>
+              <span className="stat-chip">
+                Consumo <strong>{m.fuelBurnPerKm.toFixed(1)} kg/km</strong>
+              </span>
+              <span className="stat-chip">
+                Manutenção <strong>{formatMoney(m.maintenancePerHour)}/h</strong>
               </span>
             </div>
 
