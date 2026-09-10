@@ -20,6 +20,7 @@ export function FuelPanel({ state }: { state: GameState }) {
 
   // buyFuel takes tonnes.
   const buyTonnes = (tonnes: number) => buyFuel(tonnes)
+  const priceFor = (tonnes: number) => formatMoney(Math.round(Math.min(tonnes, roomTonnes) * fuel.price))
 
   return (
     <div>
@@ -67,19 +68,19 @@ export function FuelPanel({ state }: { state: GameState }) {
 
       <div style={{ marginTop: 14, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <button onClick={() => buyTonnes(fuel.capacity * 0.25)} disabled={roomTonnes <= 0}>
-          +25%
+          +25% · {priceFor(fuel.capacity * 0.25)}
         </button>
         <button onClick={() => buyTonnes(fuel.capacity * 0.5)} disabled={roomTonnes <= 0}>
-          +50%
+          +50% · {priceFor(fuel.capacity * 0.5)}
         </button>
         <button className="primary" onClick={() => buyTonnes(roomTonnes)} disabled={roomTonnes <= 0}>
-          Encher o depósito
+          Encher o depósito · {priceFor(roomTonnes)}
         </button>
         <span style={{ color: 'var(--text-dim)' }}>ou</span>
         <NumberInput style={{ width: 120 }} min={0} value={buyKg} onChange={setBuyKg} />
         <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>kg</span>
         <button onClick={() => buyTonnes(buyKg / 1000)} disabled={buyKg <= 0}>
-          Comprar · {formatMoney(Math.round(Math.min(buyKg / 1000, roomTonnes) * fuel.price))}
+          Comprar · {priceFor(buyKg / 1000)}
         </button>
       </div>
 
