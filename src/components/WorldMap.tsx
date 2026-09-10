@@ -1,9 +1,19 @@
 import { useMemo, useState } from 'react'
-import type { GameState } from '../types'
+import type { GameState, SeatClass } from '../types'
 import { AIRPORTS, findAirport } from '../data/airports'
 import { findAircraftModel } from '../data/aircraft'
-import { interpolateGreatCircle } from '../engine/geo'
-import { formatCountdown } from '../format'
+import { distanceKm, interpolateGreatCircle } from '../engine/geo'
+import { computeRouteDemand } from '../engine/demand'
+import {
+  fairPriceForClass,
+  flightTimeHours,
+  fuelTonnes,
+  estimateLoadFactor,
+  SEAT_CLASSES,
+} from '../engine/economy'
+import { useGameStore } from '../store/gameStore'
+import { formatCountdown, formatDuration, formatMoney, formatShares } from '../format'
+import { NumberInput } from './NumberInput'
 
 const W = 720
 const H = 360
@@ -12,11 +22,16 @@ const H = 360
 const SATELLITE =
   'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/Land_ocean_ice_2048.jpg/1280px-Land_ocean_ice_2048.jpg'
 
+const CLASS_LABEL: Record<SeatClass, string> = {
+  economy: 'Econômica',
+  business: 'Executiva',
+  first: 'Primeira',
+}
+
 function project(lat: number, lon: number): [number, number] {
   return [((lon + 180) / 360) * W, ((90 - lat) / 180) * H]
 }
 
-// Very rough continent outlines ([lon, lat] rings) — context only; airports are placed exactly.
 const CONTINENTS: [number, number][][] = [
   [
     [-168, 65], [-140, 70], [-95, 72], [-60, 60], [-52, 47], [-65, 45], [-80, 25],
@@ -44,12 +59,28 @@ const CONTINENTS: [number, number][][] = [
 ]
 
 export function WorldMap({ state, now }: { state: GameState; now: number }) {
+  const createRoute = useGameStore((s) => s.createRoute)
+
   const [query, setQuery] = useState('')
   const [selectedAircraft, setSelectedAircraft] = useState<string | null>(null)
   const [hoverAirport, setHoverAirport] = useState<string | null>(null)
   const [satOk, setSatOk] = useState(true)
 
+  const [builderId, setBuilderId] = useState<string>('')
+  const [pickOrigin, setPickOrigin] = useState<string | null>(null)
+  const [pickDest, setPickDest] = useState<string | null>(null)
+  const [prices, setPrices] = useState<Record<SeatClass, number>>({ economy: 0, business: 0, first: 0 })
+
+  const hub = state.company.hubCode
   const q = query.trim().toLowerCase()
+
+  const idleNoRoute = state.fleet.filter(
+    (a) => a.status === 'idle' && !state.routes.some((r) => r.aircraftId === a.id),
+  )
+  const builderAircraft = state.fleet.find((a) => a.id === builderId)
+  const builderModel = builderAircraft ? findAircraftModel(builderAircraft.modelId) : undefined
+  const building = Boolean(builderAircraft && builderModel)
+
   const matches = (code: string): boolean => {
     if (!q) return true
     const a = findAirport(code)
@@ -60,6 +91,36 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
       a.country.toLowerCase().includes(q) ||
       a.name.toLowerCase().includes(q)
     )
+  }
+
+  const resetBuilder = () => {
+    setBuilderId('')
+    setPickOrigin(null)
+    setPickDest(null)
+  }
+
+  const originAp = pickOrigin ? findAirport(pickOrigin) : undefined
+  const inRange = (code: string): boolean => {
+    if (!builderModel || !originAp) return true
+    const a = findAirport(code)
+    return !!a && distanceKm(originAp, a) <= builderModel.rangeKm
+  }
+
+  const onAirportClick = (code: string) => {
+    if (!building) return
+    if (!pickOrigin) {
+      setPickOrigin(code)
+      return
+    }
+    if (!pickDest) {
+      if (code === pickOrigin || !inRange(code)) return
+      const dst = findAirport(code)!
+      const dist = distanceKm(originAp!, dst)
+      const init = {} as Record<SeatClass, number>
+      for (const cls of SEAT_CLASSES) init[cls] = Math.round(fairPriceForClass(dist, cls))
+      setPrices(init)
+      setPickDest(code)
+    }
   }
 
   const flights = useMemo(() => {
@@ -85,16 +146,63 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
       .filter((v): v is NonNullable<typeof v> => v !== null)
   }, [state.fleet, state.routes, now])
 
-  const selected = flights.find((fl) => fl.ac.id === selectedAircraft)
-  const hub = state.company.hubCode
+  const selected = !building ? flights.find((fl) => fl.ac.id === selectedAircraft) : undefined
+
+  // Builder preview arc + numbers.
+  const preview = useMemo(() => {
+    if (!building || !originAp || !pickDest || !builderModel) return null
+    const dst = findAirport(pickDest)!
+    const dist = Math.round(distanceKm(originAp, dst))
+    const arc = Array.from({ length: 33 }, (_, i) => {
+      const g = interpolateGreatCircle(originAp, dst, i / 32)
+      return project(g.lat, g.lon).join(',')
+    }).join(' ')
+    const demand = computeRouteDemand(originAp, dst, dist)
+    const hours = flightTimeHours(dist, builderModel.cruiseSpeedKmh)
+    const activeClasses = SEAT_CLASSES.filter((c) => (builderAircraft?.seatConfig[c] ?? 0) > 0)
+    const revenue = activeClasses.reduce((sum, c) => {
+      const load = estimateLoadFactor(dist, c, prices[c], state.company.reputation)
+      const pax = Math.min(builderAircraft!.seatConfig[c], Math.round(demand[c] * load))
+      return sum + pax * prices[c]
+    }, 0)
+    const cost = fuelTonnes(builderModel, dist) * state.fuel.price + builderModel.maintenancePerHour * hours
+    return { dst, dist, arc, demand, hours, activeClasses, revenue, cost, profit: revenue - cost }
+  }, [building, originAp, pickDest, builderModel, builderAircraft, prices, state.company.reputation, state.fuel.price])
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
         <h3 style={{ margin: 0 }}>Mapa</h3>
         <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>
           {flights.length} {flights.length === 1 ? 'voo em andamento' : 'voos em andamento'}
         </span>
+
+        {building ? (
+          <button style={{ fontSize: 12 }} onClick={resetBuilder}>
+            Cancelar nova rota
+          </button>
+        ) : idleNoRoute.length > 0 ? (
+          <select
+            value=""
+            onChange={(e) => {
+              setBuilderId(e.target.value)
+              setPickOrigin(hub)
+              setPickDest(null)
+              setSelectedAircraft(null)
+            }}
+          >
+            <option value="">➕ Criar rota para…</option>
+            {idleNoRoute.map((a) => {
+              const m = findAircraftModel(a.modelId)
+              return (
+                <option key={a.id} value={a.id}>
+                  {m?.name ?? a.modelId}
+                </option>
+              )
+            })}
+          </select>
+        ) : null}
+
         <input
           style={{ marginLeft: 'auto', width: 220, maxWidth: '100%' }}
           placeholder="Buscar aeroporto, cidade ou país"
@@ -102,6 +210,17 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
+
+      {building && (
+        <div className="stat-chip" style={{ marginBottom: 8 }}>
+          {builderModel?.name} · alcance {builderModel?.rangeKm.toLocaleString('pt-BR')} km —{' '}
+          {!pickOrigin
+            ? 'clique no aeroporto de origem'
+            : !pickDest
+              ? `origem ${pickOrigin} · clique no destino (dentro do alcance)`
+              : `${pickOrigin} → ${pickDest}`}
+        </div>
+      )}
 
       <div
         style={{
@@ -136,7 +255,6 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
             ))
           )}
 
-          {/* graticule */}
           {[-120, -60, 0, 60, 120].map((lon) => {
             const [x] = project(0, lon)
             return <line key={`v${lon}`} x1={x} y1={0} x2={x} y2={H} stroke="#fff" strokeOpacity="0.08" strokeWidth="0.5" />
@@ -146,7 +264,6 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
             return <line key={`h${lat}`} x1={0} y1={y} x2={W} y2={y} stroke="#fff" strokeOpacity="0.08" strokeWidth="0.5" />
           })}
 
-          {/* active route arcs */}
           {flights.map((fl) => (
             <polyline
               key={`arc-${fl.ac.id}`}
@@ -155,33 +272,48 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
               stroke="var(--accent)"
               strokeWidth="1"
               strokeDasharray="3 3"
-              opacity={selectedAircraft && selectedAircraft !== fl.ac.id ? 0.25 : 0.6}
+              opacity={building ? 0.15 : selectedAircraft && selectedAircraft !== fl.ac.id ? 0.25 : 0.55}
             />
           ))}
 
-          {/* airports */}
+          {preview && (
+            <polyline points={preview.arc} fill="none" stroke="#7fe0a8" strokeWidth="1.5" strokeDasharray="4 3" />
+          )}
+
           {AIRPORTS.map((a) => {
             const [x, y] = project(a.lat, a.lon)
             const on = matches(a.code)
             const isHub = a.code === hub
+            const isOrigin = building && pickOrigin === a.code
+            const isDest = building && pickDest === a.code
+            const disabled = building && !!pickOrigin && !pickDest && a.code !== pickOrigin && !inRange(a.code)
+            let fill = isHub ? '#ffd24a' : '#eaf1fb'
+            if (isOrigin) fill = '#7fe0a8'
+            if (isDest) fill = '#4cc6fb'
             return (
               <g
                 key={a.code}
                 onMouseEnter={() => setHoverAirport(a.code)}
                 onMouseLeave={() => setHoverAirport((c) => (c === a.code ? null : c))}
-                style={{ cursor: 'default' }}
+                onClick={() => onAirportClick(a.code)}
+                style={{ cursor: building && !disabled ? 'pointer' : 'default' }}
               >
                 <circle
                   cx={x}
                   cy={y}
-                  r={isHub ? 3.6 : 2.6}
-                  fill={isHub ? '#ffd24a' : '#eaf1fb'}
+                  r={isHub || isOrigin || isDest ? 4 : 2.6}
+                  fill={fill}
                   stroke="#0a1424"
                   strokeWidth="1"
-                  opacity={on ? 1 : 0.22}
+                  opacity={disabled ? 0.15 : on ? 1 : 0.22}
                 />
-                {isHub && <circle cx={x} cy={y} r={6.5} fill="none" stroke="#ffd24a" strokeWidth="1" opacity={on ? 0.8 : 0.2} />}
-                {(on && q) || hoverAirport === a.code ? (
+                {(isOrigin || isDest) && (
+                  <circle cx={x} cy={y} r={7} fill="none" stroke={fill} strokeWidth="1.5" />
+                )}
+                {isHub && !isOrigin && !isDest && (
+                  <circle cx={x} cy={y} r={6.5} fill="none" stroke="#ffd24a" strokeWidth="1" opacity={on ? 0.8 : 0.2} />
+                )}
+                {(on && q) || hoverAirport === a.code || isOrigin || isDest ? (
                   <text x={x + 5} y={y + 3} fontSize="8.5" fill="#fff" stroke="#0a1424" strokeWidth="2.4" paintOrder="stroke">
                     {a.code}
                   </text>
@@ -190,23 +322,23 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
             )
           })}
 
-          {/* aircraft */}
-          {flights.map((fl) => (
-            <g
-              key={`ac-${fl.ac.id}`}
-              transform={`translate(${fl.x} ${fl.y}) rotate(${fl.heading})`}
-              onClick={() => setSelectedAircraft(fl.ac.id)}
-              style={{ cursor: 'pointer' }}
-            >
-              <circle r="9" fill="transparent" />
-              <path
-                d="M8 0 L-5 -4 L-2 0 L-5 4 Z"
-                fill={selectedAircraft === fl.ac.id ? 'var(--accent)' : 'var(--text-h)'}
-                stroke="var(--bg)"
-                strokeWidth="0.5"
-              />
-            </g>
-          ))}
+          {!building &&
+            flights.map((fl) => (
+              <g
+                key={`ac-${fl.ac.id}`}
+                transform={`translate(${fl.x} ${fl.y}) rotate(${fl.heading})`}
+                onClick={() => setSelectedAircraft(fl.ac.id)}
+                style={{ cursor: 'pointer' }}
+              >
+                <circle r="9" fill="transparent" />
+                <path
+                  d="M8 0 L-5 -4 L-2 0 L-5 4 Z"
+                  fill={selectedAircraft === fl.ac.id ? 'var(--accent)' : 'var(--text-h)'}
+                  stroke="var(--bg)"
+                  strokeWidth="0.5"
+                />
+              </g>
+            ))}
         </svg>
 
         {selected && (
@@ -250,9 +382,85 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
         )}
       </div>
 
-      {flights.length === 0 && (
+      {preview && builderAircraft && (
+        <div
+          style={{
+            marginTop: 12,
+            border: '1px solid var(--border-soft)',
+            borderRadius: 'var(--radius-sm)',
+            background: 'var(--panel)',
+            padding: 14,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+          }}
+        >
+          <div className="stat-chip">
+            <strong>
+              {pickOrigin} → {pickDest}
+            </strong>{' '}
+            · {preview.dist.toLocaleString('pt-BR')} km · {formatDuration(preview.hours)} de voo
+          </div>
+          <div className="stat-chip">
+            Demanda diária:{' '}
+            {preview.activeClasses.map((c) => `${CLASS_LABEL[c]} ${formatShares(preview.demand[c])}`).join(' · ')}
+          </div>
+
+          {preview.activeClasses.map((c) => {
+            const suggested = Math.round(fairPriceForClass(preview.dist, c))
+            return (
+              <div key={c} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, width: 84, color: 'var(--text-dim)' }}>{CLASS_LABEL[c]}</span>
+                <span style={{ color: 'var(--text-dim)' }}>$</span>
+                <NumberInput
+                  style={{ width: 80 }}
+                  min={1}
+                  value={prices[c]}
+                  onChange={(v) => setPrices((p) => ({ ...p, [c]: v }))}
+                />
+                <button
+                  type="button"
+                  style={{ fontSize: 11, padding: '3px 8px' }}
+                  disabled={prices[c] === suggested}
+                  onClick={() => setPrices((p) => ({ ...p, [c]: suggested }))}
+                >
+                  Padrão ${suggested}
+                </button>
+              </div>
+            )
+          })}
+
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12.5 }}>
+            <span className="stat-chip">
+              Receita est./voo <strong>{formatMoney(Math.round(preview.revenue))}</strong>
+            </span>
+            <span className="stat-chip">
+              Lucro est./voo{' '}
+              <strong style={{ color: preview.profit >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                {preview.profit >= 0 ? '+' : ''}
+                {formatMoney(Math.round(preview.profit))}
+              </strong>
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className="primary"
+              onClick={() => {
+                createRoute(pickOrigin!, pickDest!, builderAircraft.id, prices)
+                resetBuilder()
+              }}
+            >
+              Criar rota
+            </button>
+            <button onClick={() => setPickDest(null)}>Trocar destino</button>
+          </div>
+        </div>
+      )}
+
+      {!building && flights.length === 0 && (
         <p style={{ color: 'var(--text-dim)', fontSize: 13, marginTop: 10 }}>
-          Nenhum avião no ar. Despache um voo na aba Rotas para vê-lo cruzando o mapa.
+          Nenhum avião no ar. Crie uma rota aqui pelo mapa ou despache um voo na aba Rotas.
         </p>
       )}
     </div>
