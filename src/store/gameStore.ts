@@ -57,6 +57,7 @@ function migrateState(saved: GameState): GameState {
     fuel: saved.fuel ?? createInitialFuel(Date.now()),
     tutorial: !rawTutorial || rawTutorial === 'stock_intro' ? 'done' : (rawTutorial as TutorialStep),
     flightsCompleted: saved.flightsCompleted ?? 0,
+    lastFixedLogAt: saved.lastFixedLogAt ?? Date.now(),
   }
 }
 
@@ -67,6 +68,8 @@ interface GameStore {
   createCompany: (name: string, hubCode: string) => void
   buyAircraft: (modelId: string, seatConfig?: SeatConfig) => void
   createRoute: (originCode: string, destCode: string, aircraftId: string, prices: Record<SeatClass, number>) => void
+  updateRoutePrices: (routeId: string, prices: Record<SeatClass, number>) => void
+  deleteRoute: (routeId: string) => void
   dispatchFlight: (routeId: string) => void
   toggleAutoManage: (aircraftId: string) => void
   buyFuel: (litres: number) => void
@@ -112,6 +115,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       lastSeen: Date.now(),
       tutorial: 'buy_aircraft',
       flightsCompleted: 0,
+      lastFixedLogAt: Date.now(),
     }
     set({ state: newState })
     persist(newState)
@@ -176,6 +180,33 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ...state,
       routes: [...state.routes, route],
       tutorial: state.tutorial === 'create_route' ? 'dispatch_flight' : state.tutorial,
+    }
+    set({ state: next })
+    persist(next)
+  },
+
+  updateRoutePrices: (routeId, prices) => {
+    const state = get().state
+    if (!state) return
+    const next: GameState = {
+      ...state,
+      routes: state.routes.map((r) => (r.id === routeId ? { ...r, prices } : r)),
+    }
+    set({ state: next })
+    persist(next)
+  },
+
+  deleteRoute: (routeId) => {
+    const state = get().state
+    if (!state) return
+    const route = state.routes.find((r) => r.id === routeId)
+    if (!route) return
+    const aircraft = state.fleet.find((a) => a.id === route.aircraftId)
+    if (aircraft?.status === 'flying') return
+    const next: GameState = {
+      ...state,
+      routes: state.routes.filter((r) => r.id !== routeId),
+      fleet: state.fleet.map((a) => (a.id === route.aircraftId ? { ...a, autoManaged: false } : a)),
     }
     set({ state: next })
     persist(next)

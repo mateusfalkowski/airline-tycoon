@@ -7,6 +7,7 @@ import {
   fairPriceForClass,
   flightTimeHours,
   fuelTonnes,
+  fixedCostPerHour,
   estimateLoadFactor,
   managerCap,
   MANAGER_HIRE_FEE,
@@ -30,8 +31,11 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
   const createRoute = useGameStore((s) => s.createRoute)
   const dispatchFlight = useGameStore((s) => s.dispatchFlight)
   const toggleAutoManage = useGameStore((s) => s.toggleAutoManage)
+  const updateRoutePrices = useGameStore((s) => s.updateRoutePrices)
+  const deleteRoute = useGameStore((s) => s.deleteRoute)
   const [editingAircraft, setEditingAircraft] = useState<string | null>(null)
   const [explainManager, setExplainManager] = useState<string | null>(null)
+  const [editingPrices, setEditingPrices] = useState<{ routeId: string; prices: Record<SeatClass, number> } | null>(null)
   const highlightDefineRoute = tutorial === 'create_route'
   const highlightDispatch = tutorial === 'dispatch_flight'
 
@@ -43,9 +47,18 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
   const managerLimit = managerCap(state.flightsCompleted)
   const managerUnlocked = state.flightsCompleted >= MANAGER_UNLOCK_FLIGHTS
 
+  const fixedPerDay = state.fleet.reduce((s, ac) => {
+    const m = findAircraftModel(ac.modelId)
+    return s + (m ? fixedCostPerHour(m.price) : 0)
+  }, 0) * 24
+
   return (
     <div>
       <h3>Frota e rotas</h3>
+      <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: -8, marginBottom: 12 }}>
+        Custo fixo da frota: ~<strong style={{ color: 'var(--text-h)' }}>{formatMoney(Math.round(fixedPerDay))}/dia</strong>{' '}
+        (pátio, seguro, equipe base) — cobrado voando ou parado.
+      </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {state.fleet.map((aircraft) => {
           const model = findAircraftModel(aircraft.modelId)
@@ -93,11 +106,71 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
                     </strong>{' '}
                     · {route.distanceKm.toLocaleString('pt-BR')} km · {formatDuration(route.flightTimeHours)} de voo
                   </div>
-                  <div className="stat-chip">
-                    {SEAT_CLASSES.filter((cls) => aircraft.seatConfig[cls] > 0)
-                      .map((cls) => `${CLASS_LABEL[cls]} ${formatMoney(route.prices[cls])}`)
-                      .join(' · ')}
-                  </div>
+                  {editingPrices?.routeId === route.id ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {SEAT_CLASSES.filter((cls) => aircraft.seatConfig[cls] > 0).map((cls) => {
+                        const suggested = Math.round(fairPriceForClass(route.distanceKm, cls))
+                        return (
+                          <div key={cls} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 12, width: 84, color: 'var(--text-dim)' }}>{CLASS_LABEL[cls]}</span>
+                            <span style={{ color: 'var(--text-dim)' }}>$</span>
+                            <NumberInput
+                              style={{ width: 80 }}
+                              min={1}
+                              value={editingPrices.prices[cls]}
+                              onChange={(v) =>
+                                setEditingPrices((p) => p && { ...p, prices: { ...p.prices, [cls]: v } })
+                              }
+                            />
+                            <button
+                              type="button"
+                              style={{ fontSize: 11, padding: '3px 8px' }}
+                              disabled={editingPrices.prices[cls] === suggested}
+                              onClick={() =>
+                                setEditingPrices((p) => p && { ...p, prices: { ...p.prices, [cls]: suggested } })
+                              }
+                            >
+                              Padrão ${suggested}
+                            </button>
+                          </div>
+                        )
+                      })}
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          className="primary"
+                          onClick={() => {
+                            updateRoutePrices(route.id, editingPrices.prices)
+                            setEditingPrices(null)
+                          }}
+                        >
+                          Salvar preços
+                        </button>
+                        <button onClick={() => setEditingPrices(null)}>Cancelar</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="stat-chip" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      <span>
+                        {SEAT_CLASSES.filter((cls) => aircraft.seatConfig[cls] > 0)
+                          .map((cls) => `${CLASS_LABEL[cls]} ${formatMoney(route.prices[cls])}`)
+                          .join(' · ')}
+                      </span>
+                      <button
+                        style={{ fontSize: 11, padding: '2px 8px' }}
+                        onClick={() => setEditingPrices({ routeId: route.id, prices: { ...route.prices } })}
+                      >
+                        Editar preços
+                      </button>
+                      <button
+                        style={{ fontSize: 11, padding: '2px 8px', borderColor: 'var(--red)', color: 'var(--red)' }}
+                        disabled={aircraft.status === 'flying'}
+                        title={aircraft.status === 'flying' ? 'Aguarde o avião pousar' : undefined}
+                        onClick={() => deleteRoute(route.id)}
+                      >
+                        Remover rota
+                      </button>
+                    </div>
+                  )}
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                     {aircraft.status === 'idle' && !aircraft.autoManaged && (
                       <button

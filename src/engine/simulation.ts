@@ -8,6 +8,7 @@ import {
   realFlightMs,
   flightTimeHours,
   fuelTonnes,
+  fixedCostPerHour,
   WEAR_PER_HOUR,
   CHECK_INTERVAL_HOURS,
 } from './economy'
@@ -114,6 +115,26 @@ export function tick(state: GameState): TickResult {
   const ledger: FinanceEvent[] = []
   const landings: FlightLanding[] = []
 
+  // Fixed fleet upkeep — charged continuously, logged hourly. Capped so a very stale save can't wipe you.
+  const fixedPerHour = state.fleet.reduce((sum, ac) => {
+    const m = findAircraftModel(ac.modelId)
+    return sum + (m ? fixedCostPerHour(m.price) : 0)
+  }, 0)
+  const upkeepHours = Math.min(72, Math.max(0, (now - state.lastSeen) / 3_600_000))
+  cash -= fixedPerHour * upkeepHours
+
+  let lastFixedLogAt = state.lastFixedLogAt
+  if (fixedPerHour > 0 && now - lastFixedLogAt >= 3_600_000) {
+    const loggedHours = Math.min(72, (now - lastFixedLogAt) / 3_600_000)
+    ledger.push({
+      id: nextEventId(),
+      t: now,
+      label: 'Custos fixos da frota (pátio, seguro, equipe base)',
+      amount: -Math.round(fixedPerHour * loggedHours),
+    })
+    lastFixedLogAt = now
+  }
+
   let fleet = state.fleet.map((aircraft): OwnedAircraft => {
     // Finish maintenance that's run its course.
     if (aircraft.status === 'maintenance') {
@@ -166,6 +187,7 @@ export function tick(state: GameState): TickResult {
     ledger: [...ledger, ...state.ledger].slice(0, 100),
     lastSeen: now,
     flightsCompleted,
+    lastFixedLogAt,
   }
 
   const botResult = runBotTick(withFleet)

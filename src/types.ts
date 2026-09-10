@@ -125,4 +125,5 @@ export interface GameState {
   lastSeen: number
   tutorial: TutorialStep
   flightsCompleted: number
+  lastFixedLogAt: number
 }

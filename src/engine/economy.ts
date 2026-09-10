@@ -23,6 +23,14 @@ export function managerFee(revenue: number): number {
   return MANAGER_FLAT_FEE + MANAGER_REVENUE_CUT * revenue
 }
 
+/** Fixed upkeep (parking, insurance, base crew) per real hour, as a fraction of the aircraft's value.
+ *  Charged whether the aircraft flies or sits — idle fleet bleeds cash. */
+export const FIXED_COST_RATE = 0.000025
+
+export function fixedCostPerHour(modelPrice: number): number {
+  return modelPrice * FIXED_COST_RATE
+}
+
 /** Aircraft wear & scheduled inspections. */
 export const WEAR_PER_HOUR = 0.011
 export const CHECK_INTERVAL_HOURS = 150
