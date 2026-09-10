@@ -5,17 +5,21 @@ import { TopBar } from './components/TopBar'
 import { MarketPanel } from './components/MarketPanel'
 import { RoutesPanel } from './components/RoutesPanel'
 import { StockPanel } from './components/StockPanel'
+import { FuelPanel } from './components/FuelPanel'
+import { MaintenancePanel } from './components/MaintenancePanel'
 import { LedgerPanel } from './components/LedgerPanel'
 import { TutorialBanner } from './components/TutorialBanner'
 import { LandingToasts } from './components/LandingToasts'
 import type { TutorialStep } from './types'
 
-const TABS = ['Rotas', 'Mercado', 'Bolsa', 'Extrato'] as const
+const TABS = ['Rotas', 'Mercado', 'Combustível', 'Manutenção', 'Bolsa', 'Extrato'] as const
 type Tab = (typeof TABS)[number]
 
 const TAB_ICON: Record<Tab, string> = {
   Rotas: '🛫',
   Mercado: '🛩️',
+  Combustível: '⛽',
+  Manutenção: '🔧',
   Bolsa: '📈',
   Extrato: '🧾',
 }
@@ -96,6 +100,8 @@ function App() {
         <div className="card">
           {activeTab === 'Rotas' && <RoutesPanel state={state} now={now} tutorial={state.tutorial} />}
           {activeTab === 'Mercado' && <MarketPanel state={state} tutorial={state.tutorial} />}
+          {activeTab === 'Combustível' && <FuelPanel state={state} />}
+          {activeTab === 'Manutenção' && <MaintenancePanel state={state} />}
           {activeTab === 'Bolsa' && <StockPanel state={state} />}
           {activeTab === 'Extrato' && <LedgerPanel state={state} />}
         </div>

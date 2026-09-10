@@ -25,6 +25,20 @@ export function managerFee(revenue: number): number {
   return MANAGER_FLAT_FEE + MANAGER_REVENUE_CUT * revenue
 }
 
+/** Aircraft wear & scheduled inspections. */
+export const WEAR_PER_HOUR = 0.011
+export const CHECK_INTERVAL_HOURS = 150
+
+/** Cost of a full scheduled inspection: resets the hours counter and clears most wear. */
+export function inspectionCost(modelPrice: number, wear: number): number {
+  return Math.round(modelPrice * 0.012 + wear * 400_000)
+}
+
+/** Cost of light maintenance: trims wear without resetting the inspection clock. */
+export function lightMaintenanceCost(modelPrice: number, wear: number): number {
+  return Math.round(modelPrice * 0.004 + wear * 150_000)
+}
+
 export const SEAT_CLASSES: SeatClass[] = ['economy', 'business', 'first']
 
 export const SEAT_UNIT: Record<SeatClass, number> = { economy: 1, business: 2, first: 4 }
@@ -89,6 +103,7 @@ export function simulateFlight(
   demand: Record<SeatClass, number>,
   reputation: number,
   fuelPrice: number,
+  maintenanceMultiplier = 1,
 ): FlightResult {
   const hours = flightTimeHours(distanceKm, model.cruiseSpeedKmh)
   const reputationFactor = 0.6 + (reputation / 100) * 0.4
@@ -122,7 +137,7 @@ export function simulateFlight(
   const seatsTotal = totalSeatCount(seatConfig)
   const overallLoadFactor = seatsTotal > 0 ? totalPassengers / seatsTotal : 0
   const fuelCost = model.fuelBurnPerHour * hours * fuelPrice
-  const maintenanceCost = model.maintenancePerHour * hours
+  const maintenanceCost = model.maintenancePerHour * hours * maintenanceMultiplier
   const profit = totalRevenue - fuelCost - maintenanceCost
   const reputationDelta = (overallLoadFactor - 0.5) * 0.6
 

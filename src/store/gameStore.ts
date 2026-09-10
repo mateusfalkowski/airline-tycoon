@@ -13,7 +13,11 @@ import {
   managerCap,
   MANAGER_HIRE_FEE,
   MANAGER_UNLOCK_FLIGHTS,
+  CHECK_INTERVAL_HOURS,
+  inspectionCost,
+  lightMaintenanceCost,
 } from '../engine/economy'
+import { createInitialFuel, buyFuel, nextDepotUpgrade } from '../engine/fuel'
 import { tick as runTick, catchUp } from '../engine/simulation'
 import type { FlightLanding } from '../engine/simulation'
 import { createInitialStock, computeValuation, ipo, sellShares, buyBackShares } from '../engine/stockMarket'
@@ -28,9 +32,14 @@ function allEconomyConfig(seats: number): SeatConfig {
 
 function migrateState(saved: GameState): GameState {
   const fleet = saved.fleet.map((aircraft) => {
-    if (aircraft.seatConfig) return aircraft
     const model = findAircraftModel(aircraft.modelId)
-    return { ...aircraft, seatConfig: allEconomyConfig(model?.seats ?? 0) }
+    return {
+      ...aircraft,
+      seatConfig: aircraft.seatConfig ?? allEconomyConfig(model?.seats ?? 0),
+      wear: aircraft.wear ?? 0,
+      hoursSinceCheck: aircraft.hoursSinceCheck ?? 0,
+      totalHours: aircraft.totalHours ?? 0,
+    }
   })
 
   const routes = saved.routes.map((route) => {
@@ -43,6 +52,7 @@ function migrateState(saved: GameState): GameState {
     ...saved,
     fleet,
     routes,
+    fuel: saved.fuel ?? createInitialFuel(Date.now()),
     tutorial: saved.tutorial ?? 'done',
     flightsCompleted: saved.flightsCompleted ?? 0,
   }
@@ -57,6 +67,10 @@ interface GameStore {
   createRoute: (originCode: string, destCode: string, aircraftId: string, prices: Record<SeatClass, number>) => void
   dispatchFlight: (routeId: string) => void
   toggleAutoManage: (aircraftId: string) => void
+  buyFuel: (litres: number) => void
+  upgradeDepot: () => void
+  serviceAircraft: (aircraftId: string) => void
+  lightMaintenance: (aircraftId: string) => void
   doTick: () => void
   dismissLanding: (id: string) => void
   doIpo: (floatPercent: number) => void
@@ -91,6 +105,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       company: { name, hubCode, foundedAt: Date.now(), reputation: 50 },
       cash: STARTING_CASH,
       fuelPrice: BASE_FUEL_PRICE,
+      fuel: createInitialFuel(Date.now()),
       fleet: [],
       routes: [],
       stock: createInitialStock(sharePrice),
@@ -119,6 +134,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       modelId,
       status: 'idle',
       seatConfig: config,
+      wear: 0,
+      hoursSinceCheck: 0,
+      totalHours: 0,
     }
     const next: GameState = {
       ...state,
@@ -169,6 +187,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!route) return
     const aircraft = state.fleet.find((a) => a.id === route.aircraftId)
     if (!aircraft || aircraft.status !== 'idle') return
+    if (aircraft.hoursSinceCheck >= CHECK_INTERVAL_HOURS) return
 
     const now = Date.now()
     const arrivesAt = now + realFlightMs(route.flightTimeHours)
@@ -226,6 +245,105 @@ export const useGameStore = create<GameStore>((set, get) => ({
           label: `Contratou gerente de operações para ${name}`,
           amount: -MANAGER_HIRE_FEE,
         },
+        ...state.ledger,
+      ].slice(0, 100),
+    }
+    set({ state: next })
+    persist(next)
+  },
+
+  buyFuel: (litres) => {
+    const state = get().state
+    if (!state || litres <= 0) return
+    const affordable = Math.floor(state.cash / state.fuel.price)
+    const room = state.fuel.capacity - state.fuel.stored
+    const amount = Math.min(litres, affordable, room)
+    if (amount <= 0) return
+    const { fuel, cost } = buyFuel(state.fuel, amount)
+    const now = Date.now()
+    const next: GameState = {
+      ...state,
+      fuel,
+      cash: state.cash - cost,
+      ledger: [
+        {
+          id: `evt-fuel-${now}`,
+          t: now,
+          label: `Comprou ${Math.round(amount).toLocaleString('pt-BR')} L de combustível`,
+          amount: -Math.round(cost),
+        },
+        ...state.ledger,
+      ].slice(0, 100),
+    }
+    set({ state: next })
+    persist(next)
+  },
+
+  upgradeDepot: () => {
+    const state = get().state
+    if (!state) return
+    const upgrade = nextDepotUpgrade(state.fuel.capacity)
+    if (!upgrade || state.cash < upgrade.cost) return
+    const now = Date.now()
+    const next: GameState = {
+      ...state,
+      cash: state.cash - upgrade.cost,
+      fuel: { ...state.fuel, capacity: upgrade.capacity },
+      ledger: [
+        {
+          id: `evt-depot-${now}`,
+          t: now,
+          label: `Ampliou o depósito para ${upgrade.capacity.toLocaleString('pt-BR')} L`,
+          amount: -upgrade.cost,
+        },
+        ...state.ledger,
+      ].slice(0, 100),
+    }
+    set({ state: next })
+    persist(next)
+  },
+
+  serviceAircraft: (aircraftId) => {
+    const state = get().state
+    if (!state) return
+    const aircraft = state.fleet.find((a) => a.id === aircraftId)
+    if (!aircraft || aircraft.status !== 'idle') return
+    const model = findAircraftModel(aircraft.modelId)
+    if (!model) return
+    const cost = inspectionCost(model.price, aircraft.wear)
+    if (state.cash < cost) return
+    const now = Date.now()
+    const next: GameState = {
+      ...state,
+      cash: state.cash - cost,
+      fleet: state.fleet.map((a) =>
+        a.id === aircraftId ? { ...a, wear: a.wear * 0.25, hoursSinceCheck: 0 } : a,
+      ),
+      ledger: [
+        { id: `evt-check-${now}`, t: now, label: `Revisão completa de ${model.name}`, amount: -cost },
+        ...state.ledger,
+      ].slice(0, 100),
+    }
+    set({ state: next })
+    persist(next)
+  },
+
+  lightMaintenance: (aircraftId) => {
+    const state = get().state
+    if (!state) return
+    const aircraft = state.fleet.find((a) => a.id === aircraftId)
+    if (!aircraft || aircraft.status !== 'idle') return
+    const model = findAircraftModel(aircraft.modelId)
+    if (!model) return
+    const cost = lightMaintenanceCost(model.price, aircraft.wear)
+    if (state.cash < cost) return
+    const now = Date.now()
+    const next: GameState = {
+      ...state,
+      cash: state.cash - cost,
+      fleet: state.fleet.map((a) => (a.id === aircraftId ? { ...a, wear: a.wear * 0.55 } : a)),
+      ledger: [
+        { id: `evt-lightmx-${now}`, t: now, label: `Manutenção leve de ${model.name}`, amount: -cost },
         ...state.ledger,
       ].slice(0, 100),
     }

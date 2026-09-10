@@ -42,6 +42,12 @@ export interface OwnedAircraft {
   seatConfig: SeatConfig
   flight?: ActiveFlight
   autoManaged?: boolean
+  /** Airframe wear, 0 (new) to 1 (worn out). */
+  wear: number
+  /** Flight-hours flown since the last scheduled inspection. */
+  hoursSinceCheck: number
+  /** Total flight-hours flown. */
+  totalHours: number
 }
 
 export interface Route {
@@ -82,6 +88,21 @@ export interface Company {
   reputation: number
 }
 
+export interface FuelState {
+  /** Litres currently in the depot. */
+  stored: number
+  /** Depot capacity in litres. */
+  capacity: number
+  /** Weighted-average $/L cost of the fuel currently stored. */
+  avgCost: number
+  /** Current spot price, $/L. */
+  price: number
+  /** Recent spot prices for the chart. */
+  history: PricePoint[]
+  /** Timestamp of the last hourly price move. */
+  lastPriceTick: number
+}
+
 export type TutorialStep = 'buy_aircraft' | 'create_route' | 'dispatch_flight' | 'stock_intro' | 'done'
 
 export interface GameState {
@@ -89,6 +110,7 @@ export interface GameState {
   company: Company
   cash: number
   fuelPrice: number
+  fuel: FuelState
   fleet: OwnedAircraft[]
   routes: Route[]
   stock: StockState
