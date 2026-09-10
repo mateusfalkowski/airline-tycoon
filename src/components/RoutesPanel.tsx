@@ -12,6 +12,7 @@ import {
   managerCap,
   MANAGER_HIRE_FEE,
   MANAGER_UNLOCK_FLIGHTS,
+  CHECK_INTERVAL_HOURS,
   SEAT_CLASSES,
 } from '../engine/economy'
 import { computeRouteDemand } from '../engine/demand'
@@ -52,13 +53,47 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
     return s + (m ? fixedCostPerHour(m.price) : 0)
   }, 0) * 24
 
+  const readyToDispatch = state.fleet.filter(
+    (a) =>
+      a.status === 'idle' &&
+      !a.autoManaged &&
+      a.hoursSinceCheck < CHECK_INTERVAL_HOURS &&
+      state.routes.some((r) => r.aircraftId === a.id),
+  )
+
   return (
     <div>
       <h3>Frota e rotas</h3>
-      <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: -8, marginBottom: 12 }}>
-        Custo fixo da frota: ~<strong style={{ color: 'var(--text-h)' }}>{formatMoney(Math.round(fixedPerDay))}/dia</strong>{' '}
-        (pátio, seguro, equipe base) — cobrado voando ou parado.
-      </p>
+      <div
+        style={{
+          display: 'flex',
+          gap: 12,
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          marginTop: -8,
+          marginBottom: 12,
+        }}
+      >
+        <p style={{ color: 'var(--text-dim)', fontSize: 12, margin: 0 }}>
+          Custo fixo da frota: ~
+          <strong style={{ color: 'var(--text-h)' }}>{formatMoney(Math.round(fixedPerDay))}/dia</strong> (pátio,
+          seguro, equipe base) — cobrado voando ou parado.
+        </p>
+        {readyToDispatch.length >= 2 && (
+          <button
+            className="primary"
+            style={{ fontSize: 12, marginLeft: 'auto' }}
+            onClick={() => {
+              readyToDispatch.forEach((a) => {
+                const r = state.routes.find((rt) => rt.aircraftId === a.id)
+                if (r) dispatchFlight(r.id)
+              })
+            }}
+          >
+            Despachar todos os prontos ({readyToDispatch.length})
+          </button>
+        )}
+      </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {state.fleet.map((aircraft) => {
           const model = findAircraftModel(aircraft.modelId)

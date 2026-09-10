@@ -11,6 +11,7 @@ import { LedgerPanel } from './components/LedgerPanel'
 import { WorldMap } from './components/WorldMap'
 import { TutorialBanner } from './components/TutorialBanner'
 import { LandingToasts } from './components/LandingToasts'
+import { CHECK_INTERVAL_HOURS } from './engine/economy'
 import type { TutorialStep } from './types'
 
 const TABS = ['Mapa', 'Rotas', 'Mercado', 'Combustível', 'Manutenção', 'Bolsa', 'Extrato'] as const
@@ -63,9 +64,42 @@ function App() {
 
   const activeTab = lockedTab ?? tab
 
+  const inspectionsDue = state.fleet.filter((a) => a.hoursSinceCheck >= CHECK_INTERVAL_HOURS).length
+  const fuelLow = state.fuel.stored <= 0 && state.routes.length > 0
+  const alerts: { text: string; tab: Tab }[] = []
+  if (inspectionsDue > 0)
+    alerts.push({
+      text: `${inspectionsDue} ${inspectionsDue === 1 ? 'aeronave precisa' : 'aeronaves precisam'} de revisão`,
+      tab: 'Manutenção',
+    })
+  if (fuelLow) alerts.push({ text: 'Depósito de combustível vazio — voos comprando no preço spot', tab: 'Combustível' })
+
   return (
     <div>
       <TopBar state={state} />
+
+      {!lockedTab &&
+        alerts.map((a) => (
+          <button
+            key={a.text}
+            onClick={() => setTab(a.tab)}
+            style={{
+              display: 'block',
+              width: '100%',
+              textAlign: 'left',
+              border: 'none',
+              borderBottom: '1px solid var(--border-soft)',
+              borderRadius: 0,
+              background: 'color-mix(in srgb, var(--red) 14%, var(--panel))',
+              color: 'var(--text-h)',
+              padding: '8px 20px',
+              fontSize: 12.5,
+              fontWeight: 500,
+            }}
+          >
+            ⚠ {a.text} — abrir {a.tab}
+          </button>
+        ))}
 
       <nav
         style={{
