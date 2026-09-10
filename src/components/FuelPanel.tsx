@@ -1,19 +1,20 @@
 import { useState } from 'react'
 import type { GameState } from '../types'
 import { useGameStore } from '../store/gameStore'
-import { formatMoney } from '../format'
-import { nextDepotUpgrade } from '../engine/fuel'
+import { formatCountdown, formatMoney } from '../format'
+import { nextDepotUpgrade, FUEL_PRICE_INTERVAL_MS } from '../engine/fuel'
 import { NumberInput } from './NumberInput'
 
 const kg = (tonnes: number) => Math.round(tonnes * 1000).toLocaleString('pt-BR')
 
-export function FuelPanel({ state }: { state: GameState }) {
+export function FuelPanel({ state, now }: { state: GameState; now: number }) {
   const buyFuel = useGameStore((s) => s.buyFuel)
   const upgradeDepot = useGameStore((s) => s.upgradeDepot)
   const { fuel } = state
 
   const prev = fuel.history.length >= 2 ? fuel.history[fuel.history.length - 2].price : fuel.price
   const delta = fuel.price - prev
+  const nextChange = fuel.lastPriceTick + FUEL_PRICE_INTERVAL_MS - now
   const roomTonnes = Math.max(0, fuel.capacity - fuel.stored)
   const [buyKg, setBuyKg] = useState(0)
   const upgrade = nextDepotUpgrade(fuel.capacity)
@@ -37,7 +38,9 @@ export function FuelPanel({ state }: { state: GameState }) {
               {delta >= 0 ? '▲' : '▼'} {formatMoney(Math.round(Math.abs(delta)))}
             </span>
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>por 1.000 kg · muda a cada 15 min</div>
+          <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>
+            por 1.000 kg · próxima mudança em {nextChange > 0 ? formatCountdown(nextChange) : 'instantes'}
+          </div>
         </div>
         <div>
           <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-dim)' }}>

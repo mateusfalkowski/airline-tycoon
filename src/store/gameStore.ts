@@ -19,7 +19,7 @@ import {
   lightMaintenanceCost,
 } from '../engine/economy'
 import { createInitialFuel, buyFuel, nextDepotUpgrade } from '../engine/fuel'
-import { tick as runTick, catchUp } from '../engine/simulation'
+import { tick as runTick, catchUp, dispatchOutcome } from '../engine/simulation'
 import type { FlightLanding } from '../engine/simulation'
 import { createInitialStock, computeValuation, listCompany, STOCK_LISTING_FEE } from '../engine/stockMarket'
 import { loadGame, saveGame, wipeSave } from '../engine/persistence'
@@ -159,17 +159,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const aircraft = state?.fleet.find((a) => a.id === aircraftId)
     if (!state || !origin || !dest || !aircraft || originCode === destCode) return
 
+    const model = findAircraftModel(aircraft.modelId)
+    const dist = Math.round(distanceKm(origin, dest))
+    if (model && dist > model.rangeKm) return
+
     const route: Route = {
       id: `route-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       originCode,
       destCode,
       aircraftId,
       prices,
-      distanceKm: Math.round(distanceKm(origin, dest)),
-      flightTimeHours: 0,
+      distanceKm: dist,
+      flightTimeHours: model ? flightTimeHours(dist, model.cruiseSpeedKmh) : 0,
     }
-    const model = findAircraftModel(aircraft.modelId)
-    if (model) route.flightTimeHours = flightTimeHours(route.distanceKm, model.cruiseSpeedKmh)
 
     const next: GameState = {
       ...state,
@@ -190,15 +192,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (aircraft.hoursSinceCheck >= CHECK_INTERVAL_HOURS) return
 
     const now = Date.now()
-    const arrivesAt = now + realFlightMs(route.flightTimeHours)
+    const outcome = dispatchOutcome(aircraft, route, state.fuel, state.company.reputation, now)
+    if (!outcome) return
+
     const next: GameState = {
       ...state,
+      cash: state.cash + outcome.cashDelta,
+      fuel: outcome.fuel,
+      company: {
+        ...state.company,
+        reputation: Math.min(100, Math.max(0, state.company.reputation + outcome.reputationDelta)),
+      },
       fleet: state.fleet.map((a) =>
-        a.id === aircraft.id ? { ...a, status: 'flying', flight: { routeId, departedAt: now, arrivesAt } } : a,
+        a.id === aircraft.id ? { ...a, status: 'flying', flight: outcome.flight } : a,
       ),
+      ledger: [outcome.ledger, ...state.ledger].slice(0, 100),
       tutorial: state.tutorial === 'dispatch_flight' ? 'done' : state.tutorial,
     }
-    set({ state: next })
+    set((s) => ({ state: next, landings: [...s.landings, outcome.landing].slice(-4) }))
     persist(next)
   },
 

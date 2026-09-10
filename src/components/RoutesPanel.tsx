@@ -204,6 +204,12 @@ function RouteForm({
   const dist = originAirport && destAirport ? distanceKm(originAirport, destAirport) : 0
   const demand = originAirport && destAirport ? computeRouteDemand(originAirport, destAirport, dist) : null
 
+  const inRange = (code: string): boolean => {
+    const a = findAirport(code)
+    return !!originAirport && !!a && distanceKm(originAirport, a) <= model.rangeKm
+  }
+  const outOfRange = dist > model.rangeKm
+
   const [prices, setPrices] = useState<Record<SeatClass, number>>(() => {
     const initial = {} as Record<SeatClass, number>
     for (const cls of SEAT_CLASSES) initial[cls] = Math.round(fairPriceForClass(dist, cls))
@@ -237,12 +243,18 @@ function RouteForm({
         <Field label="Destino">
           <select value={dest} onChange={(e) => setDest(e.target.value)}>
             {AIRPORTS.filter((a) => a.code !== origin).map((a) => (
-              <option key={a.code} value={a.code}>
+              <option key={a.code} value={a.code} disabled={!inRange(a.code)}>
                 {a.code} — {a.city}
+                {inRange(a.code) ? '' : ' (fora de alcance)'}
               </option>
             ))}
           </select>
         </Field>
+      </div>
+
+      <div className="stat-chip" style={{ color: outOfRange ? 'var(--red)' : 'var(--text-dim)' }}>
+        {Math.round(dist).toLocaleString('pt-BR')} km · alcance da aeronave {model.rangeKm.toLocaleString('pt-BR')} km
+        {outOfRange ? ' — rota longa demais' : ''}
       </div>
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
@@ -289,7 +301,11 @@ function RouteForm({
       </div>
 
       <div style={{ display: 'flex', gap: 8 }}>
-        <button className="primary" disabled={origin === dest} onClick={() => onCreate(origin, dest, prices)}>
+        <button
+          className="primary"
+          disabled={origin === dest || outOfRange}
+          onClick={() => onCreate(origin, dest, prices)}
+        >
           Criar rota
         </button>
         <button onClick={onCancel}>Cancelar</button>

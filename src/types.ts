@@ -36,6 +36,8 @@ export interface ActiveFlight {
   routeId: string
   departedAt: number
   arrivesAt: number
+  /** Flight-hours — applied to wear/inspection counters when the flight arrives. */
+  hours: number
 }
 
 export interface OwnedAircraft {

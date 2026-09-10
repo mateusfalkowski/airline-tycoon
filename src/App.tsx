@@ -99,7 +99,7 @@ function App() {
         <div className="card">
           {activeTab === 'Rotas' && <RoutesPanel state={state} now={now} tutorial={state.tutorial} />}
           {activeTab === 'Mercado' && <MarketPanel state={state} tutorial={state.tutorial} />}
-          {activeTab === 'Combustível' && <FuelPanel state={state} />}
+          {activeTab === 'Combustível' && <FuelPanel state={state} now={now} />}
           {activeTab === 'Manutenção' && <MaintenancePanel state={state} now={now} />}
           {activeTab === 'Bolsa' && <StockPanel state={state} />}
           {activeTab === 'Extrato' && <LedgerPanel state={state} />}

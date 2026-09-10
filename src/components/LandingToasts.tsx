@@ -50,7 +50,7 @@ function Toast({ landing }: { landing: FlightLanding }) {
       }}
     >
       <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>
-        ✈️ Voo pousou · {landing.routeLabel}
+        ✈️ Voo despachado · {landing.routeLabel}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, marginTop: 2 }}>
         <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>
