@@ -17,6 +17,9 @@ import {
   inspectionCost,
   lightMaintenanceCost,
   resaleValue,
+  CAMPAIGNS,
+  CAMPAIGN_COOLDOWN_MS,
+  campaignGain,
 } from '../engine/economy'
 import { createInitialFuel, buyFuel, nextDepotUpgrade } from '../engine/fuel'
 import { tick as runTick, catchUp, dispatchOutcome } from '../engine/simulation'
@@ -76,6 +79,7 @@ interface GameStore {
   toggleAutoManage: (aircraftId: string) => void
   buyFuel: (litres: number) => void
   upgradeDepot: () => void
+  runCampaign: (campaignId: string) => void
   serviceAircraft: (aircraftId: string) => void
   lightMaintenance: (aircraftId: string) => void
   doTick: () => void
@@ -338,6 +342,31 @@ export const useGameStore = create<GameStore>((set, get) => ({
           label: `Comprou ${Math.round(amount * 1000).toLocaleString('pt-BR')} kg de combustível`,
           amount: -Math.round(cost),
         },
+        ...state.ledger,
+      ].slice(0, 100),
+    }
+    set({ state: next })
+    persist(next)
+  },
+
+  runCampaign: (campaignId) => {
+    const state = get().state
+    if (!state) return
+    const c = CAMPAIGNS.find((x) => x.id === campaignId)
+    if (!c || state.cash < c.cost) return
+    const now = Date.now()
+    if ((state.company.campaignReadyAt ?? 0) > now) return
+    const gain = campaignGain(c.gain, state.company.reputation)
+    const next: GameState = {
+      ...state,
+      cash: state.cash - c.cost,
+      company: {
+        ...state.company,
+        reputation: Math.min(100, state.company.reputation + gain),
+        campaignReadyAt: now + CAMPAIGN_COOLDOWN_MS,
+      },
+      ledger: [
+        { id: `evt-mkt-${now}`, t: now, label: `Campanha de marketing ${c.name} (+${gain} reputação)`, amount: -c.cost },
         ...state.ledger,
       ].slice(0, 100),
     }

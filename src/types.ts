@@ -94,6 +94,8 @@ export interface Company {
   hubCode: string
   foundedAt: number
   reputation: number
+  /** Earliest time a new marketing campaign can be run. */
+  campaignReadyAt?: number
 }
 
 export interface FuelState {

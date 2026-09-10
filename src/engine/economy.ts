@@ -38,6 +38,20 @@ export function resaleValue(modelPrice: number, totalHours: number, wear: number
   return Math.round(modelPrice * 0.7 * hoursFactor * wearFactor)
 }
 
+/** Marketing campaigns: a cash sink that buys reputation, with diminishing returns near the top. */
+export const CAMPAIGNS = [
+  { id: 'local', name: 'Local', cost: 200_000, gain: 6 },
+  { id: 'nacional', name: 'Nacional', cost: 900_000, gain: 16 },
+  { id: 'global', name: 'Global', cost: 3_000_000, gain: 34 },
+] as const
+
+export const CAMPAIGN_COOLDOWN_MS = 60 * 60 * 1000
+
+/** Actual reputation points a campaign adds, given where reputation already is. */
+export function campaignGain(baseGain: number, currentReputation: number): number {
+  return Math.round(clamp((baseGain * (100 - currentReputation)) / 50, 0, baseGain))
+}
+
 /** Aircraft wear & scheduled inspections. */
 export const WEAR_PER_HOUR = 0.011
 export const CHECK_INTERVAL_HOURS = 150
