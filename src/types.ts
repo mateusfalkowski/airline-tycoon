@@ -131,4 +131,6 @@ export interface GameState {
   /** Revenue team hired — auto-tunes ticket prices toward demand for a cut of revenue. */
   revenueTeam: boolean
   lastRevenueTuneAt: number
+  /** Outstanding loan principal; interest accrues on it continuously. */
+  debt: number
 }

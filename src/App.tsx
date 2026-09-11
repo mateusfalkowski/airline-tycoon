@@ -69,6 +69,11 @@ function App() {
   const inspectionsDue = state.fleet.filter((a) => a.hoursSinceCheck >= CHECK_INTERVAL_HOURS).length
   const fuelLow = state.fuel.stored <= 0 && state.routes.length > 0
   const alerts: { text: string; tab: Tab }[] = []
+  if (state.cash < 0)
+    alerts.push({
+      text: `Caixa negativo (${state.cash.toLocaleString('en-US', { maximumFractionDigits: 0 })}) — venda aeronaves ou renegocie a dívida`,
+      tab: 'Companhia',
+    })
   if (inspectionsDue > 0)
     alerts.push({
       text: `${inspectionsDue} ${inspectionsDue === 1 ? 'aeronave precisa' : 'aeronaves precisam'} de revisão`,

@@ -52,6 +52,14 @@ export function campaignGain(baseGain: number, currentReputation: number): numbe
   return Math.round(clamp((baseGain * (100 - currentReputation)) / 50, 0, baseGain))
 }
 
+/** Loans: borrow against company value, pay ~1%/day interest on the outstanding balance. */
+export const LOAN_DAILY_RATE = 0.01
+export const LOAN_VALUATION_LIMIT = 0.6
+
+export function maxLoan(valuation: number, debt: number): number {
+  return Math.max(0, Math.floor(valuation * LOAN_VALUATION_LIMIT) - debt)
+}
+
 /** Revenue team: auto-tunes every route's prices toward demand, for a cut of gross revenue. */
 export const REVENUE_TEAM_HIRE_FEE = 500_000
 export const REVENUE_TEAM_UNLOCK_FLIGHTS = 30

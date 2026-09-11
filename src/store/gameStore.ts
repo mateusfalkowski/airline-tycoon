@@ -23,6 +23,7 @@ import {
   REVENUE_TEAM_HIRE_FEE,
   REVENUE_TEAM_UNLOCK_FLIGHTS,
   REVENUE_TEAM_CUT,
+  maxLoan,
 } from '../engine/economy'
 import { createInitialFuel, buyFuel, nextDepotUpgrade } from '../engine/fuel'
 import { tick as runTick, catchUp, dispatchOutcome } from '../engine/simulation'
@@ -67,6 +68,7 @@ function migrateState(saved: GameState): GameState {
     lastFixedLogAt: saved.lastFixedLogAt ?? Date.now(),
     revenueTeam: saved.revenueTeam ?? false,
     lastRevenueTuneAt: saved.lastRevenueTuneAt ?? Date.now(),
+    debt: saved.debt ?? 0,
   }
 }
 
@@ -86,6 +88,8 @@ interface GameStore {
   upgradeDepot: () => void
   runCampaign: (campaignId: string) => void
   toggleRevenueTeam: () => void
+  takeLoan: (amount: number) => void
+  repayLoan: (amount: number) => void
   serviceAircraft: (aircraftId: string) => void
   lightMaintenance: (aircraftId: string) => void
   doTick: () => void
@@ -130,6 +134,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       lastFixedLogAt: Date.now(),
       revenueTeam: false,
       lastRevenueTuneAt: Date.now(),
+      debt: 0,
     }
     set({ state: newState })
     persist(newState)
@@ -389,6 +394,45 @@ export const useGameStore = create<GameStore>((set, get) => ({
       lastRevenueTuneAt: now,
       ledger: [
         { id: `evt-rm-on-${now}`, t: now, label: 'Contratou a equipe de revenue', amount: -REVENUE_TEAM_HIRE_FEE },
+        ...state.ledger,
+      ].slice(0, 100),
+    }
+    set({ state: next })
+    persist(next)
+  },
+
+  takeLoan: (amount) => {
+    const state = get().state
+    if (!state) return
+    const ceiling = maxLoan(computeValuation(state), state.debt)
+    const draw = Math.min(Math.floor(amount), ceiling)
+    if (draw <= 0) return
+    const now = Date.now()
+    const next: GameState = {
+      ...state,
+      cash: state.cash + draw,
+      debt: state.debt + draw,
+      ledger: [
+        { id: `evt-loan-${now}`, t: now, label: 'Empréstimo contratado', amount: draw },
+        ...state.ledger,
+      ].slice(0, 100),
+    }
+    set({ state: next })
+    persist(next)
+  },
+
+  repayLoan: (amount) => {
+    const state = get().state
+    if (!state) return
+    const pay = Math.min(Math.floor(amount), state.debt, Math.floor(state.cash))
+    if (pay <= 0) return
+    const now = Date.now()
+    const next: GameState = {
+      ...state,
+      cash: state.cash - pay,
+      debt: state.debt - pay,
+      ledger: [
+        { id: `evt-repay-${now}`, t: now, label: 'Amortização de dívida', amount: -pay },
         ...state.ledger,
       ].slice(0, 100),
     }

@@ -11,6 +11,7 @@ import {
   fuelTonnes,
   fixedCostPerHour,
   retunePrice,
+  LOAN_DAILY_RATE,
   WEAR_PER_HOUR,
   CHECK_INTERVAL_HOURS,
   REVENUE_TEAM_CUT,
@@ -128,17 +129,26 @@ export function tick(state: GameState): TickResult {
     return sum + (m ? fixedCostPerHour(m.price) : 0)
   }, 0)
   const upkeepHours = Math.min(72, Math.max(0, (now - state.lastSeen) / 3_600_000))
-  cash -= fixedPerHour * upkeepHours
+  const interestPerHour = (state.debt * LOAN_DAILY_RATE) / 24
+  cash -= (fixedPerHour + interestPerHour) * upkeepHours
 
   let lastFixedLogAt = state.lastFixedLogAt
-  if (fixedPerHour > 0 && now - lastFixedLogAt >= 3_600_000) {
+  if (now - lastFixedLogAt >= 3_600_000 && (fixedPerHour > 0 || interestPerHour > 0)) {
     const loggedHours = Math.min(72, (now - lastFixedLogAt) / 3_600_000)
-    ledger.push({
-      id: nextEventId(),
-      t: now,
-      label: 'Custos fixos da frota (pátio, seguro, equipe base)',
-      amount: -Math.round(fixedPerHour * loggedHours),
-    })
+    if (fixedPerHour > 0)
+      ledger.push({
+        id: nextEventId(),
+        t: now,
+        label: 'Custos fixos da frota (pátio, seguro, equipe base)',
+        amount: -Math.round(fixedPerHour * loggedHours),
+      })
+    if (interestPerHour > 0)
+      ledger.push({
+        id: nextEventId(),
+        t: now,
+        label: 'Juros da dívida',
+        amount: -Math.round(interestPerHour * loggedHours),
+      })
     lastFixedLogAt = now
   }
 
