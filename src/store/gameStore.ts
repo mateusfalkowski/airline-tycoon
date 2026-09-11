@@ -26,6 +26,7 @@ import {
   maxLoan,
 } from '../engine/economy'
 import { createInitialFuel, buyFuel, nextDepotUpgrade } from '../engine/fuel'
+import { rollNextEventAt } from '../engine/events'
 import { tick as runTick, catchUp, dispatchOutcome } from '../engine/simulation'
 import type { FlightLanding } from '../engine/simulation'
 import { createInitialStock, computeValuation, listCompany, STOCK_LISTING_FEE } from '../engine/stockMarket'
@@ -69,6 +70,8 @@ function migrateState(saved: GameState): GameState {
     revenueTeam: saved.revenueTeam ?? false,
     lastRevenueTuneAt: saved.lastRevenueTuneAt ?? Date.now(),
     debt: saved.debt ?? 0,
+    achievedMilestones: saved.achievedMilestones ?? [],
+    nextEventAt: saved.nextEventAt ?? rollNextEventAt(Date.now()),
   }
 }
 
@@ -97,6 +100,7 @@ interface GameStore {
   listCompany: () => void
   finishTutorial: () => void
   resetGame: () => void
+  importSave: (json: string) => boolean
 }
 
 function persist(state: GameState) {
@@ -135,6 +139,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       revenueTeam: false,
       lastRevenueTuneAt: Date.now(),
       debt: 0,
+      achievedMilestones: [],
+      nextEventAt: rollNextEventAt(Date.now()),
     }
     set({ state: newState })
     persist(newState)
@@ -599,6 +605,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
   resetGame: () => {
     wipeSave()
     set({ state: null, landings: [] })
+  },
+
+  importSave: (json) => {
+    let parsed: GameState
+    try {
+      parsed = JSON.parse(json) as GameState
+    } catch {
+      return false
+    }
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.fleet) || !Array.isArray(parsed.routes) || !parsed.company) {
+      return false
+    }
+    const migrated = migrateState(parsed)
+    const { state: caughtUp, landings } = catchUp(migrated)
+    set({ state: caughtUp, landings: landings.slice(-4) })
+    persist(caughtUp)
+    return true
   },
 }))
 

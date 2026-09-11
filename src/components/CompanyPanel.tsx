@@ -11,6 +11,7 @@ import {
   LOAN_DAILY_RATE,
   maxLoan,
 } from '../engine/economy'
+import { MILESTONES } from '../engine/milestones'
 
 export function CompanyPanel({ state, now }: { state: GameState; now: number }) {
   const runCampaign = useGameStore((s) => s.runCampaign)
@@ -26,6 +27,7 @@ export function CompanyPanel({ state, now }: { state: GameState; now: number }) 
   const credit = maxLoan(getCompanyValuation(state), state.debt)
   const maxRepay = Math.min(state.debt, Math.floor(state.cash))
   const interestPerDay = Math.round(state.debt * LOAN_DAILY_RATE)
+  const achievedIds = new Set(state.achievedMilestones)
 
   return (
     <div>
@@ -43,6 +45,32 @@ export function CompanyPanel({ state, now }: { state: GameState; now: number }) 
         <div style={{ height: 10, borderRadius: 999, background: 'var(--border)', overflow: 'hidden', maxWidth: 420 }}>
           <div style={{ width: `${rep}%`, height: '100%', background: 'var(--gold)' }} />
         </div>
+      </div>
+
+      <h3 style={{ fontSize: 15 }}>
+        Marcos{' '}
+        <span style={{ color: 'var(--text-dim)', fontWeight: 400, fontSize: 12.5 }}>
+          ({achievedIds.size}/{MILESTONES.length})
+        </span>
+      </h3>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
+        {MILESTONES.map((m) => {
+          const done = achievedIds.has(m.id)
+          return (
+            <span
+              key={m.id}
+              className="badge"
+              style={
+                done
+                  ? { color: 'var(--gold)', borderColor: 'var(--gold)', background: 'rgba(251, 191, 36, 0.12)' }
+                  : undefined
+              }
+            >
+              {done ? '✓ ' : ''}
+              {m.label}
+            </span>
+          )
+        })}
       </div>
 
       <h3 style={{ fontSize: 15 }}>Marketing</h3>

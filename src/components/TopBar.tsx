@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { GameState } from '../types'
 import { formatMoney } from '../format'
 import { useGameStore } from '../store/gameStore'
@@ -9,7 +9,28 @@ interface Props {
 
 export function TopBar({ state }: Props) {
   const resetGame = useGameStore((s) => s.resetGame)
+  const importSave = useGameStore((s) => s.importSave)
   const [confirming, setConfirming] = useState(false)
+  const [importError, setImportError] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  function handleExport() {
+    const json = JSON.stringify(state, null, 2)
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const stamp = new Date().toISOString().slice(0, 10)
+    const slug =
+      state.company.name
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'save'
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `airline-tycoon-${slug}-${stamp}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <header
@@ -38,6 +59,28 @@ export function TopBar({ state }: Props) {
         <Stat label="Reputação" value={`${Math.round(state.company.reputation)}/100`} />
         <Stat label="Ação" value={`$${state.stock.sharePrice.toFixed(2)}`} />
         <Stat label="Frota" value={`${state.fleet.length}`} />
+
+        <button style={{ fontSize: 12 }} onClick={handleExport}>
+          Exportar save
+        </button>
+        <button style={{ fontSize: 12 }} onClick={() => fileInputRef.current?.click()}>
+          Importar save
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/json"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            e.target.value = ''
+            if (!file) return
+            const reader = new FileReader()
+            reader.onload = () => setImportError(!importSave(String(reader.result ?? '')))
+            reader.readAsText(file)
+          }}
+        />
+        {importError && <span style={{ fontSize: 11.5, color: 'var(--red)' }}>Save inválido</span>}
 
         {confirming ? (
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>

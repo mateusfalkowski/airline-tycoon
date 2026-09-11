@@ -30,7 +30,7 @@ export type SeatConfig = Record<SeatClass, number>
 
 export type FlightStatus = 'idle' | 'flying' | 'maintenance'
 
-export type MaintenanceKind = 'light' | 'inspection'
+export type MaintenanceKind = 'light' | 'inspection' | 'aog'
 
 export interface ActiveFlight {
   routeId: string
@@ -133,4 +133,8 @@ export interface GameState {
   lastRevenueTuneAt: number
   /** Outstanding loan principal; interest accrues on it continuously. */
   debt: number
+  /** IDs of milestones already reached — sticky, kept even if the underlying stat later drops. */
+  achievedMilestones: string[]
+  /** When the next random event is scheduled to roll. */
+  nextEventAt: number
 }

@@ -21,6 +21,8 @@ import {
 import { computeRouteDemand } from './demand'
 import { advanceFuelMarket, drawFuel } from './fuel'
 import { runBotTick } from './stockMarket'
+import { updateMilestones } from './milestones'
+import { rollNextEventAt, rollRandomEvent } from './events'
 
 let eventCounter = 0
 function nextEventId(): string {
@@ -181,7 +183,21 @@ export function tick(state: GameState): TickResult {
     lastRevenueTuneAt = now
   }
 
-  let fleet = state.fleet.map((aircraft): OwnedAircraft => {
+  // Random events: rare, short-lived shocks or bonuses.
+  let nextEventAt = state.nextEventAt ?? rollNextEventAt(now)
+  let eventFleet = state.fleet
+  if (now >= nextEventAt) {
+    const outcome = rollRandomEvent(state, now)
+    if (outcome) {
+      cash += outcome.cashDelta
+      reputation = clamp(reputation + outcome.reputationDelta, 0, 100)
+      if (outcome.fleet) eventFleet = outcome.fleet
+      ledger.push({ id: nextEventId(), t: now, label: outcome.label, amount: Math.round(outcome.cashDelta) })
+    }
+    nextEventAt = rollNextEventAt(now)
+  }
+
+  let fleet = eventFleet.map((aircraft): OwnedAircraft => {
     // Finish maintenance that's run its course.
     if (aircraft.status === 'maintenance') {
       if ((aircraft.maintenanceUntil ?? 0) > now) return aircraft
@@ -236,6 +252,7 @@ export function tick(state: GameState): TickResult {
     flightsCompleted,
     lastFixedLogAt,
     lastRevenueTuneAt,
+    nextEventAt,
   }
 
   const botResult = runBotTick(withFleet)
@@ -252,7 +269,7 @@ export function tick(state: GameState): TickResult {
     ].slice(0, 100)
   }
 
-  return { state: withStock, landings }
+  return { state: updateMilestones(withStock), landings }
 }
 
 /** Fast-forwards a state loaded after time away, resolving any flights that already landed. */
