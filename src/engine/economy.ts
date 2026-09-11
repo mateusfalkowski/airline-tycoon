@@ -52,6 +52,30 @@ export function campaignGain(baseGain: number, currentReputation: number): numbe
   return Math.round(clamp((baseGain * (100 - currentReputation)) / 50, 0, baseGain))
 }
 
+/** Revenue team: auto-tunes every route's prices toward demand, for a cut of gross revenue. */
+export const REVENUE_TEAM_HIRE_FEE = 500_000
+export const REVENUE_TEAM_UNLOCK_FLIGHTS = 30
+export const REVENUE_TEAM_CUT = 0.025
+export const REVENUE_TUNE_INTERVAL_MS = 45 * 1000
+
+/** One conservative step of demand-based re-pricing for a single class. */
+export function retunePrice(
+  currentPrice: number,
+  distanceKm: number,
+  cls: SeatClass,
+  seats: number,
+  demand: number,
+  reputation: number,
+): number {
+  const fair = fairPriceForClass(distanceKm, cls)
+  const load = estimateLoadFactor(distanceKm, cls, currentPrice, reputation)
+  const wouldSell = demand * load
+  let next = currentPrice
+  if (wouldSell > seats * 1.05) next = currentPrice * 1.035 // selling out with demand to spare — push yield
+  else if (load < 0.72) next = currentPrice * 0.97 // flying light — fill seats
+  return Math.round(clamp(next, fair * 0.5, fair * 2.4))
+}
+
 /** Aircraft wear & scheduled inspections. */
 export const WEAR_PER_HOUR = 0.011
 export const CHECK_INTERVAL_HOURS = 150

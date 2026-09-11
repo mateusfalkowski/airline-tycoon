@@ -1,10 +1,16 @@
 import type { GameState } from '../types'
 import { useGameStore } from '../store/gameStore'
 import { formatCountdown, formatMoney } from '../format'
-import { CAMPAIGNS, campaignGain } from '../engine/economy'
+import {
+  CAMPAIGNS,
+  campaignGain,
+  REVENUE_TEAM_HIRE_FEE,
+  REVENUE_TEAM_UNLOCK_FLIGHTS,
+} from '../engine/economy'
 
 export function CompanyPanel({ state, now }: { state: GameState; now: number }) {
   const runCampaign = useGameStore((s) => s.runCampaign)
+  const toggleRevenueTeam = useGameStore((s) => s.toggleRevenueTeam)
   const rep = state.company.reputation
   const cooldown = (state.company.campaignReadyAt ?? 0) - now
   const onCooldown = cooldown > 0
@@ -76,6 +82,38 @@ export function CompanyPanel({ state, now }: { state: GameState; now: number }) 
           )
         })}
       </div>
+
+      <h3 style={{ fontSize: 15, marginTop: 24 }}>Equipe de revenue</h3>
+      <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: -6, maxWidth: 520 }}>
+        Uma equipe de revenue reajusta sozinha os preços de <em>todas</em> as rotas conforme a demanda: sobe
+        onde vende esgotado, baixa onde voa vazio. Cobra <strong style={{ color: 'var(--text-h)' }}>2,5% da
+        receita de cada voo</strong> e é conservadora — quem sabe precificar à mão ainda ganha mais. Disponível
+        após {REVENUE_TEAM_UNLOCK_FLIGHTS} voos concluídos.
+      </p>
+      {state.revenueTeam ? (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span className="badge" style={{ color: 'var(--accent)', borderColor: 'var(--accent)' }}>
+            Ativa · reajustando preços
+          </span>
+          <button style={{ fontSize: 12 }} onClick={toggleRevenueTeam}>
+            Dispensar equipe
+          </button>
+        </div>
+      ) : state.flightsCompleted < REVENUE_TEAM_UNLOCK_FLIGHTS ? (
+        <button disabled style={{ fontSize: 12 }}>
+          Requer {REVENUE_TEAM_UNLOCK_FLIGHTS} voos ({state.flightsCompleted}/{REVENUE_TEAM_UNLOCK_FLIGHTS})
+        </button>
+      ) : (
+        <button
+          className="primary"
+          style={{ fontSize: 12 }}
+          disabled={state.cash < REVENUE_TEAM_HIRE_FEE}
+          title={state.cash < REVENUE_TEAM_HIRE_FEE ? 'Caixa insuficiente' : undefined}
+          onClick={toggleRevenueTeam}
+        >
+          Contratar equipe de revenue · {formatMoney(REVENUE_TEAM_HIRE_FEE)}
+        </button>
+      )}
     </div>
   )
 }

@@ -128,4 +128,7 @@ export interface GameState {
   tutorial: TutorialStep
   flightsCompleted: number
   lastFixedLogAt: number
+  /** Revenue team hired — auto-tunes ticket prices toward demand for a cut of revenue. */
+  revenueTeam: boolean
+  lastRevenueTuneAt: number
 }

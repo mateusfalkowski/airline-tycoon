@@ -1,6 +1,7 @@
 import type { ActiveFlight, FinanceEvent, FuelState, GameState, OwnedAircraft, Route } from '../types'
 import { findAircraftModel } from '../data/aircraft'
 import { findAirport } from '../data/airports'
+import type { SeatClass } from '../types'
 import {
   simulateFlight,
   clamp,
@@ -9,8 +10,12 @@ import {
   flightTimeHours,
   fuelTonnes,
   fixedCostPerHour,
+  retunePrice,
   WEAR_PER_HOUR,
   CHECK_INTERVAL_HOURS,
+  REVENUE_TEAM_CUT,
+  REVENUE_TUNE_INTERVAL_MS,
+  SEAT_CLASSES,
 } from './economy'
 import { computeRouteDemand } from './demand'
 import { advanceFuelMarket, drawFuel } from './fuel'
@@ -47,6 +52,7 @@ export function dispatchOutcome(
   fuel: FuelState,
   reputation: number,
   now: number,
+  revenueCut = 0,
 ): DispatchOutcome | null {
   const model = findAircraftModel(aircraft.modelId)
   const origin = findAirport(route.originCode)
@@ -71,7 +77,8 @@ export function dispatchOutcome(
   )
 
   const fee = aircraft.autoManaged ? managerFee(result.revenue) : 0
-  const netProfit = result.profit - fee
+  const rmFee = revenueCut * result.revenue
+  const netProfit = result.profit - fee - rmFee
   const id = nextEventId()
   const auto = aircraft.autoManaged ? ` (auto · gerente −${Math.round(fee).toLocaleString('en-US')})` : ''
 
@@ -135,6 +142,35 @@ export function tick(state: GameState): TickResult {
     lastFixedLogAt = now
   }
 
+  // Revenue team: periodically nudge every route's prices toward demand.
+  let routes = state.routes
+  let lastRevenueTuneAt = state.lastRevenueTuneAt
+  const revenueCut = state.revenueTeam ? REVENUE_TEAM_CUT : 0
+  if (state.revenueTeam && now - lastRevenueTuneAt >= REVENUE_TUNE_INTERVAL_MS) {
+    routes = state.routes.map((route) => {
+      const ac = state.fleet.find((a) => a.id === route.aircraftId)
+      const origin = findAirport(route.originCode)
+      const dest = findAirport(route.destCode)
+      if (!ac || !origin || !dest) return route
+      const demand = computeRouteDemand(origin, dest, route.distanceKm)
+      const nextPrices = { ...route.prices } as Record<SeatClass, number>
+      for (const cls of SEAT_CLASSES) {
+        if (ac.seatConfig[cls] > 0) {
+          nextPrices[cls] = retunePrice(
+            route.prices[cls],
+            route.distanceKm,
+            cls,
+            ac.seatConfig[cls],
+            demand[cls],
+            state.company.reputation,
+          )
+        }
+      }
+      return { ...route, prices: nextPrices }
+    })
+    lastRevenueTuneAt = now
+  }
+
   let fleet = state.fleet.map((aircraft): OwnedAircraft => {
     // Finish maintenance that's run its course.
     if (aircraft.status === 'maintenance') {
@@ -166,9 +202,9 @@ export function tick(state: GameState): TickResult {
   fleet = fleet.map((aircraft): OwnedAircraft => {
     if (!aircraft.autoManaged || aircraft.status !== 'idle') return aircraft
     if (aircraft.hoursSinceCheck >= CHECK_INTERVAL_HOURS) return aircraft
-    const route = state.routes.find((r) => r.aircraftId === aircraft.id)
+    const route = routes.find((r) => r.aircraftId === aircraft.id)
     if (!route) return aircraft
-    const outcome = dispatchOutcome(aircraft, route, fuel, reputation, now)
+    const outcome = dispatchOutcome(aircraft, route, fuel, reputation, now, revenueCut)
     if (!outcome) return aircraft
     fuel = outcome.fuel
     cash += outcome.cashDelta
@@ -183,11 +219,13 @@ export function tick(state: GameState): TickResult {
     cash,
     fuel,
     fleet,
+    routes,
     company: { ...state.company, reputation },
     ledger: [...ledger, ...state.ledger].slice(0, 100),
     lastSeen: now,
     flightsCompleted,
     lastFixedLogAt,
+    lastRevenueTuneAt,
   }
 
   const botResult = runBotTick(withFleet)

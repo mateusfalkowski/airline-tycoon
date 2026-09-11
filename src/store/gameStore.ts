@@ -20,6 +20,9 @@ import {
   CAMPAIGNS,
   CAMPAIGN_COOLDOWN_MS,
   campaignGain,
+  REVENUE_TEAM_HIRE_FEE,
+  REVENUE_TEAM_UNLOCK_FLIGHTS,
+  REVENUE_TEAM_CUT,
 } from '../engine/economy'
 import { createInitialFuel, buyFuel, nextDepotUpgrade } from '../engine/fuel'
 import { tick as runTick, catchUp, dispatchOutcome } from '../engine/simulation'
@@ -62,6 +65,8 @@ function migrateState(saved: GameState): GameState {
     tutorial: !rawTutorial || rawTutorial === 'stock_intro' ? 'done' : (rawTutorial as TutorialStep),
     flightsCompleted: saved.flightsCompleted ?? 0,
     lastFixedLogAt: saved.lastFixedLogAt ?? Date.now(),
+    revenueTeam: saved.revenueTeam ?? false,
+    lastRevenueTuneAt: saved.lastRevenueTuneAt ?? Date.now(),
   }
 }
 
@@ -80,6 +85,7 @@ interface GameStore {
   buyFuel: (litres: number) => void
   upgradeDepot: () => void
   runCampaign: (campaignId: string) => void
+  toggleRevenueTeam: () => void
   serviceAircraft: (aircraftId: string) => void
   lightMaintenance: (aircraftId: string) => void
   doTick: () => void
@@ -122,6 +128,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       tutorial: 'buy_aircraft',
       flightsCompleted: 0,
       lastFixedLogAt: Date.now(),
+      revenueTeam: false,
+      lastRevenueTuneAt: Date.now(),
     }
     set({ state: newState })
     persist(newState)
@@ -251,7 +259,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (aircraft.hoursSinceCheck >= CHECK_INTERVAL_HOURS) return
 
     const now = Date.now()
-    const outcome = dispatchOutcome(aircraft, route, state.fuel, state.company.reputation, now)
+    const outcome = dispatchOutcome(
+      aircraft,
+      route,
+      state.fuel,
+      state.company.reputation,
+      now,
+      state.revenueTeam ? REVENUE_TEAM_CUT : 0,
+    )
     if (!outcome) return
 
     const next: GameState = {
@@ -342,6 +357,38 @@ export const useGameStore = create<GameStore>((set, get) => ({
           label: `Comprou ${Math.round(amount * 1000).toLocaleString('pt-BR')} kg de combustível`,
           amount: -Math.round(cost),
         },
+        ...state.ledger,
+      ].slice(0, 100),
+    }
+    set({ state: next })
+    persist(next)
+  },
+
+  toggleRevenueTeam: () => {
+    const state = get().state
+    if (!state) return
+    const now = Date.now()
+    if (state.revenueTeam) {
+      const next: GameState = {
+        ...state,
+        revenueTeam: false,
+        ledger: [
+          { id: `evt-rm-off-${now}`, t: now, label: 'Dispensou a equipe de revenue', amount: 0 },
+          ...state.ledger,
+        ].slice(0, 100),
+      }
+      set({ state: next })
+      persist(next)
+      return
+    }
+    if (state.flightsCompleted < REVENUE_TEAM_UNLOCK_FLIGHTS || state.cash < REVENUE_TEAM_HIRE_FEE) return
+    const next: GameState = {
+      ...state,
+      revenueTeam: true,
+      cash: state.cash - REVENUE_TEAM_HIRE_FEE,
+      lastRevenueTuneAt: now,
+      ledger: [
+        { id: `evt-rm-on-${now}`, t: now, label: 'Contratou a equipe de revenue', amount: -REVENUE_TEAM_HIRE_FEE },
         ...state.ledger,
       ].slice(0, 100),
     }
