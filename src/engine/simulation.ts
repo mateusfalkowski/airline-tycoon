@@ -116,6 +116,108 @@ export interface TickResult {
   landings: FlightLanding[]
 }
 
+const MAX_CATCHUP_EVENTS = 300
+
+function nextAircraftEventAt(aircraft: OwnedAircraft): number | null {
+  if (aircraft.status === 'flying' && aircraft.flight) return aircraft.flight.arrivesAt
+  if (aircraft.status === 'maintenance') return aircraft.maintenanceUntil ?? null
+  return null
+}
+
+interface FleetAdvanceResult {
+  fleet: OwnedAircraft[]
+  fuel: FuelState
+  cash: number
+  reputation: number
+  flightsCompleted: number
+  ledger: FinanceEvent[]
+  landings: FlightLanding[]
+}
+
+/** Steps the fleet through every flight-arrival and maintenance-completion up to `now`, one at a
+ *  time, redispatching auto-managed aircraft immediately — so a manager keeps flying its route
+ *  while the game is closed instead of only resolving whatever was already in the air. */
+function advanceFleetTo(
+  fleet: OwnedAircraft[],
+  routes: Route[],
+  fuel: FuelState,
+  reputation: number,
+  cash: number,
+  flightsCompleted: number,
+  revenueCut: number,
+  now: number,
+): FleetAdvanceResult {
+  let working = fleet
+  const landings: FlightLanding[] = []
+  let autoFlights = 0
+  let autoProfit = 0
+
+  for (let guard = 0; guard < MAX_CATCHUP_EVENTS; guard++) {
+    let pickIdx = -1
+    let pickTime = Infinity
+    for (let i = 0; i < working.length; i++) {
+      const t = nextAircraftEventAt(working[i])
+      if (t !== null && t <= now && t < pickTime) {
+        pickTime = t
+        pickIdx = i
+      }
+    }
+    if (pickIdx === -1) break
+
+    const aircraft = working[pickIdx]
+
+    if (aircraft.status === 'maintenance') {
+      const cleared =
+        aircraft.maintenanceKind === 'inspection'
+          ? { ...aircraft, wear: 0, hoursSinceCheck: 0 }
+          : { ...aircraft, wear: aircraft.wear * 0.55 }
+      const idled = { ...cleared, status: 'idle' as const, maintenanceKind: undefined, maintenanceUntil: undefined }
+      working = working.map((a, i) => (i === pickIdx ? idled : a))
+      continue
+    }
+
+    // Flight arrival — apply the physical toll and free the aircraft.
+    const h = aircraft.flight!.hours
+    flightsCompleted += 1
+    let updated: OwnedAircraft = {
+      ...aircraft,
+      status: 'idle' as const,
+      flight: undefined,
+      wear: clamp(aircraft.wear + h * WEAR_PER_HOUR, 0, 1),
+      hoursSinceCheck: aircraft.hoursSinceCheck + h,
+      totalHours: aircraft.totalHours + h,
+    }
+
+    if (updated.autoManaged && updated.hoursSinceCheck < CHECK_INTERVAL_HOURS) {
+      const route = routes.find((r) => r.aircraftId === updated.id)
+      const outcome = route ? dispatchOutcome(updated, route, fuel, reputation, pickTime, revenueCut) : null
+      if (outcome) {
+        fuel = outcome.fuel
+        cash += outcome.cashDelta
+        reputation = clamp(reputation + outcome.reputationDelta, 0, 100)
+        landings.push(outcome.landing)
+        autoFlights += 1
+        autoProfit += outcome.cashDelta
+        updated = { ...updated, status: 'flying', flight: outcome.flight }
+      }
+    }
+
+    working = working.map((a, i) => (i === pickIdx ? updated : a))
+  }
+
+  const ledger: FinanceEvent[] = []
+  if (autoFlights > 0) {
+    ledger.push({
+      id: nextEventId(),
+      t: now,
+      label: `Enquanto você estava fora: ${autoFlights} ${autoFlights === 1 ? 'voo automático' : 'voos automáticos'}`,
+      amount: Math.round(autoProfit),
+    })
+  }
+
+  return { fleet: working, fuel, cash, reputation, flightsCompleted, ledger, landings }
+}
+
 export function tick(state: GameState): TickResult {
   const now = Date.now()
   let cash = state.cash
@@ -272,7 +374,34 @@ export function tick(state: GameState): TickResult {
   return { state: updateMilestones(withStock), landings }
 }
 
-/** Fast-forwards a state loaded after time away, resolving any flights that already landed. */
+/** Fast-forwards a state loaded after time away: walks every flight-arrival and
+ *  maintenance-completion up to now in order, letting auto-managed aircraft keep flying their
+ *  route the whole time, then hands off to a normal tick for everything else (fixed costs, fuel
+ *  market, stock bots, random events — all already time-integrated or single-step by design). */
 export function catchUp(state: GameState): TickResult {
-  return tick(state)
+  const now = Date.now()
+  const revenueCut = state.revenueTeam ? REVENUE_TEAM_CUT : 0
+  const advanced = advanceFleetTo(
+    state.fleet,
+    state.routes,
+    state.fuel,
+    state.company.reputation,
+    state.cash,
+    state.flightsCompleted,
+    revenueCut,
+    now,
+  )
+
+  const withAdvance: GameState = {
+    ...state,
+    fleet: advanced.fleet,
+    fuel: advanced.fuel,
+    cash: advanced.cash,
+    company: { ...state.company, reputation: advanced.reputation },
+    flightsCompleted: advanced.flightsCompleted,
+    ledger: advanced.ledger.length ? [...advanced.ledger, ...state.ledger].slice(0, 100) : state.ledger,
+  }
+
+  const { state: ticked, landings: tickLandings } = tick(withAdvance)
+  return { state: ticked, landings: [...advanced.landings, ...tickLandings].slice(-4) }
 }
