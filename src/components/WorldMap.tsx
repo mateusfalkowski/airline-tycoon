@@ -3,7 +3,7 @@ import type { GameState, SeatClass } from '../types'
 import { AIRPORTS, findAirport } from '../data/airports'
 import { findAircraftModel } from '../data/aircraft'
 import { distanceKm, interpolateGreatCircle } from '../engine/geo'
-import { computeRouteDemand } from '../engine/demand'
+import { computeRouteDemand, seasonalMultiplier } from '../engine/demand'
 import {
   fairPriceForClass,
   flightTimeHours,
@@ -141,6 +141,7 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
 
   const hub = state.company.hubCode
   const q = query.trim().toLowerCase()
+  const seasonPct = Math.round((seasonalMultiplier(now) - 1) * 100)
 
   const idleNoRoute = state.fleet.filter(
     (a) => a.status === 'idle' && !state.routes.some((r) => r.aircraftId === a.id),
@@ -226,7 +227,7 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
       const g = interpolateGreatCircle(originAp, dst, i / 32)
       return project(g.lat, g.lon).join(',')
     }).join(' ')
-    const demand = computeRouteDemand(originAp, dst, dist)
+    const demand = computeRouteDemand(originAp, dst, dist, now)
     const hours = flightTimeHours(dist, builderModel.cruiseSpeedKmh)
     const activeClasses = SEAT_CLASSES.filter((c) => (builderAircraft?.seatConfig[c] ?? 0) > 0)
     const revenue = activeClasses.reduce((sum, c) => {
@@ -245,6 +246,17 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
         <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>
           {flights.length} {flights.length === 1 ? 'voo em andamento' : 'voos em andamento'}
         </span>
+
+        {Math.abs(seasonPct) >= 3 && (
+          <span
+            className="badge"
+            style={seasonPct > 0 ? { color: 'var(--green)', borderColor: 'var(--green)' } : { color: 'var(--red)', borderColor: 'var(--red)' }}
+            title="Demanda de passageiros varia ao longo do ano"
+          >
+            {seasonPct > 0 ? '📈' : '📉'} Temporada {seasonPct > 0 ? 'alta' : 'baixa'} ({seasonPct > 0 ? '+' : ''}
+            {seasonPct}%)
+          </span>
+        )}
 
         {building ? (
           <button style={{ fontSize: 12 }} onClick={resetBuilder}>

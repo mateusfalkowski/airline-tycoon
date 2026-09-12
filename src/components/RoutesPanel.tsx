@@ -349,7 +349,7 @@ function RouteForm({
   const originAirport = findAirport(origin)
   const destAirport = findAirport(dest)
   const dist = originAirport && destAirport ? distanceKm(originAirport, destAirport) : 0
-  const demand = originAirport && destAirport ? computeRouteDemand(originAirport, destAirport, dist) : null
+  const demand = originAirport && destAirport ? computeRouteDemand(originAirport, destAirport, dist, Date.now()) : null
 
   const inRange = (code: string): boolean => {
     const a = findAirport(code)

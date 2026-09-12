@@ -67,7 +67,7 @@ export function dispatchOutcome(
   const drawn = drawFuel(fuel, tonnes)
   const effectiveFuelPrice = tonnes > 0 ? drawn.cost / tonnes : fuel.price
 
-  const demand = computeRouteDemand(origin, dest, route.distanceKm)
+  const demand = computeRouteDemand(origin, dest, route.distanceKm, now)
   const result = simulateFlight(
     model,
     route.distanceKm,
@@ -164,7 +164,7 @@ export function tick(state: GameState): TickResult {
       const origin = findAirport(route.originCode)
       const dest = findAirport(route.destCode)
       if (!ac || !origin || !dest) return route
-      const demand = computeRouteDemand(origin, dest, route.distanceKm)
+      const demand = computeRouteDemand(origin, dest, route.distanceKm, now)
       const nextPrices = { ...route.prices } as Record<SeatClass, number>
       for (const cls of SEAT_CLASSES) {
         if (ac.seatConfig[cls] > 0) {
