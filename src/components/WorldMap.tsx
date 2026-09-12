@@ -328,17 +328,42 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
                 fill="var(--panel-alt)"
                 stroke="var(--border-soft)"
                 strokeWidth="0.75"
+                vectorEffect="non-scaling-stroke"
               />
             ))
           )}
 
           {[-120, -60, 0, 60, 120].map((lon) => {
             const [x] = project(0, lon)
-            return <line key={`v${lon}`} x1={x} y1={0} x2={x} y2={H} stroke="#fff" strokeOpacity="0.08" strokeWidth="0.5" />
+            return (
+              <line
+                key={`v${lon}`}
+                x1={x}
+                y1={0}
+                x2={x}
+                y2={H}
+                stroke="#fff"
+                strokeOpacity="0.08"
+                strokeWidth="0.5"
+                vectorEffect="non-scaling-stroke"
+              />
+            )
           })}
           {[-60, -30, 0, 30, 60].map((lat) => {
             const [, y] = project(lat, 0)
-            return <line key={`h${lat}`} x1={0} y1={y} x2={W} y2={y} stroke="#fff" strokeOpacity="0.08" strokeWidth="0.5" />
+            return (
+              <line
+                key={`h${lat}`}
+                x1={0}
+                y1={y}
+                x2={W}
+                y2={y}
+                stroke="#fff"
+                strokeOpacity="0.08"
+                strokeWidth="0.5"
+                vectorEffect="non-scaling-stroke"
+              />
+            )
           })}
 
           {flights.map((fl) => (
@@ -349,12 +374,20 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
               stroke="var(--accent)"
               strokeWidth="1"
               strokeDasharray="3 3"
+              vectorEffect="non-scaling-stroke"
               opacity={building ? 0.15 : selectedAircraft && selectedAircraft !== fl.ac.id ? 0.25 : 0.55}
             />
           ))}
 
           {preview && (
-            <polyline points={preview.arc} fill="none" stroke="#7fe0a8" strokeWidth="1.5" strokeDasharray="4 3" />
+            <polyline
+              points={preview.arc}
+              fill="none"
+              stroke="#7fe0a8"
+              strokeWidth="1.5"
+              strokeDasharray="4 3"
+              vectorEffect="non-scaling-stroke"
+            />
           )}
 
           {AIRPORTS.map((a) => {
@@ -370,28 +403,27 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
             return (
               <g
                 key={a.code}
+                transform={`translate(${x} ${y}) scale(${1 / view.zoom})`}
                 onMouseEnter={() => setHoverAirport(a.code)}
                 onMouseLeave={() => setHoverAirport((c) => (c === a.code ? null : c))}
                 onClick={() => onAirportClick(a.code)}
                 style={{ cursor: building && !disabled ? 'pointer' : 'default' }}
               >
                 <circle
-                  cx={x}
-                  cy={y}
+                  cx={0}
+                  cy={0}
                   r={isHub || isOrigin || isDest ? 4 : 2.6}
                   fill={fill}
                   stroke="#0a1424"
                   strokeWidth="1"
                   opacity={disabled ? 0.15 : on ? 1 : 0.22}
                 />
-                {(isOrigin || isDest) && (
-                  <circle cx={x} cy={y} r={7} fill="none" stroke={fill} strokeWidth="1.5" />
-                )}
+                {(isOrigin || isDest) && <circle cx={0} cy={0} r={7} fill="none" stroke={fill} strokeWidth="1.5" />}
                 {isHub && !isOrigin && !isDest && (
-                  <circle cx={x} cy={y} r={6.5} fill="none" stroke="#ffd24a" strokeWidth="1" opacity={on ? 0.8 : 0.2} />
+                  <circle cx={0} cy={0} r={6.5} fill="none" stroke="#ffd24a" strokeWidth="1" opacity={on ? 0.8 : 0.2} />
                 )}
                 {(on && q) || hoverAirport === a.code || isOrigin || isDest ? (
-                  <text x={x + 5} y={y + 3} fontSize="8.5" fill="#fff" stroke="#0a1424" strokeWidth="2.4" paintOrder="stroke">
+                  <text x={5} y={3} fontSize="8.5" fill="#fff" stroke="#0a1424" strokeWidth="2.4" paintOrder="stroke">
                     {a.code}
                   </text>
                 ) : null}
@@ -403,7 +435,7 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
             flights.map((fl) => (
               <g
                 key={`ac-${fl.ac.id}`}
-                transform={`translate(${fl.x} ${fl.y}) rotate(${fl.heading})`}
+                transform={`translate(${fl.x} ${fl.y}) rotate(${fl.heading}) scale(${1 / view.zoom})`}
                 onClick={() => {
                   if (suppressClickRef.current) return
                   setSelectedAircraft(fl.ac.id)
