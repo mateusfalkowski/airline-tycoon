@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState, type PointerEvent, type WheelEvent } from 'react'
 import type { GameState, SeatClass } from '../types'
 import { AIRPORTS, findAirport } from '../data/airports'
 import { findAircraftModel } from '../data/aircraft'
@@ -17,6 +17,21 @@ import { NumberInput } from './NumberInput'
 
 const W = 720
 const H = 360
+const MIN_ZOOM = 1
+const MAX_ZOOM = 10
+
+interface MapView {
+  zoom: number
+  x: number
+  y: number
+}
+
+function clampView(v: MapView): MapView {
+  const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.zoom))
+  const minX = W - W * zoom
+  const minY = H - H * zoom
+  return { zoom, x: Math.min(0, Math.max(minX, v.x)), y: Math.min(0, Math.max(minY, v.y)) }
+}
 
 // NASA "Blue Marble" land/ocean/ice composite — public domain, equirectangular, via Wikimedia's CDN.
 const SATELLITE =
@@ -66,6 +81,57 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
   const [hoverAirport, setHoverAirport] = useState<string | null>(null)
   const [satOk, setSatOk] = useState(true)
 
+  const [view, setView] = useState<MapView>({ zoom: 1, x: 0, y: 0 })
+  const svgRef = useRef<SVGSVGElement>(null)
+  const dragRef = useRef<{ startClientX: number; startClientY: number; startX: number; startY: number; moved: boolean } | null>(
+    null,
+  )
+  const suppressClickRef = useRef(false)
+
+  const zoomAt = (cx: number, cy: number, factor: number) => {
+    setView((v) => {
+      const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.zoom * factor))
+      const worldX = (cx - v.x) / v.zoom
+      const worldY = (cy - v.y) / v.zoom
+      return clampView({ zoom: nextZoom, x: cx - worldX * nextZoom, y: cy - worldY * nextZoom })
+    })
+  }
+
+  const handleWheel = (e: WheelEvent<SVGSVGElement>) => {
+    e.preventDefault()
+    const rect = svgRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const cx = ((e.clientX - rect.left) / rect.width) * W
+    const cy = ((e.clientY - rect.top) / rect.height) * H
+    zoomAt(cx, cy, e.deltaY < 0 ? 1.25 : 0.8)
+  }
+
+  const handlePointerDown = (e: PointerEvent<SVGSVGElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    dragRef.current = { startClientX: e.clientX, startClientY: e.clientY, startX: view.x, startY: view.y, moved: false }
+  }
+
+  const handlePointerMove = (e: PointerEvent<SVGSVGElement>) => {
+    const d = dragRef.current
+    const rect = svgRef.current?.getBoundingClientRect()
+    if (!d || !rect) return
+    const dx = ((e.clientX - d.startClientX) / rect.width) * W
+    const dy = ((e.clientY - d.startClientY) / rect.height) * H
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) d.moved = true
+    setView((v) => clampView({ ...v, x: d.startX + dx, y: d.startY + dy }))
+  }
+
+  const handlePointerUp = () => {
+    const d = dragRef.current
+    dragRef.current = null
+    if (d?.moved) {
+      suppressClickRef.current = true
+      setTimeout(() => {
+        suppressClickRef.current = false
+      }, 0)
+    }
+  }
+
   const [builderId, setBuilderId] = useState<string>('')
   const [pickOrigin, setPickOrigin] = useState<string | null>(null)
   const [pickDest, setPickDest] = useState<string | null>(null)
@@ -107,6 +173,7 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
   }
 
   const onAirportClick = (code: string) => {
+    if (suppressClickRef.current) return
     if (!building) return
     if (!pickOrigin) {
       setPickOrigin(code)
@@ -231,7 +298,17 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
           overflow: 'hidden',
         }}
       >
-        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block', background: '#0a1424' }}>
+        <svg
+          ref={svgRef}
+          viewBox={`0 0 ${W} ${H}`}
+          style={{ width: '100%', display: 'block', background: '#0a1424', touchAction: 'none', cursor: 'grab' }}
+          onWheel={handleWheel}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerLeave={handlePointerUp}
+        >
+        <g transform={`translate(${view.x} ${view.y}) scale(${view.zoom})`}>
           {satOk ? (
             <image
               href={SATELLITE}
@@ -327,19 +404,62 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
               <g
                 key={`ac-${fl.ac.id}`}
                 transform={`translate(${fl.x} ${fl.y}) rotate(${fl.heading})`}
-                onClick={() => setSelectedAircraft(fl.ac.id)}
+                onClick={() => {
+                  if (suppressClickRef.current) return
+                  setSelectedAircraft(fl.ac.id)
+                }}
                 style={{ cursor: 'pointer' }}
               >
                 <circle r="9" fill="transparent" />
                 <path
-                  d="M8 0 L-5 -4 L-2 0 L-5 4 Z"
+                  d="M10 0 L3 -1.2 L-2 -9 L0 -1.5 L-6 -1 L-8 -4 L-7.5 -0.8 L-9 0 L-7.5 0.8 L-8 4 L-6 1 L0 1.5 L-2 9 L3 1.2 Z"
                   fill={selectedAircraft === fl.ac.id ? 'var(--accent)' : 'var(--text-h)'}
                   stroke="var(--bg)"
                   strokeWidth="0.5"
+                  strokeLinejoin="round"
                 />
               </g>
             ))}
+        </g>
         </svg>
+
+        <div
+          style={{
+            position: 'absolute',
+            right: 10,
+            bottom: 10,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+          }}
+        >
+          <button
+            type="button"
+            style={{ fontSize: 14, padding: '2px 10px', lineHeight: 1.4 }}
+            onClick={() => zoomAt(W / 2, H / 2, 1.5)}
+            title="Aproximar"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            style={{ fontSize: 14, padding: '2px 10px', lineHeight: 1.4 }}
+            onClick={() => zoomAt(W / 2, H / 2, 1 / 1.5)}
+            title="Afastar"
+          >
+            −
+          </button>
+          {view.zoom > 1 && (
+            <button
+              type="button"
+              style={{ fontSize: 11, padding: '2px 6px' }}
+              onClick={() => setView({ zoom: 1, x: 0, y: 0 })}
+              title="Restaurar visão"
+            >
+              ⟲
+            </button>
+          )}
+        </div>
 
         {selected && (
           <div
