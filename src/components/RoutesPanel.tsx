@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { AircraftModel, GameState, SeatClass, TutorialStep } from '../types'
+import type { AircraftModel, GameState, Route, SeatClass, TutorialStep } from '../types'
 import { AIRPORTS, findAirport } from '../data/airports'
 import { findAircraftModel } from '../data/aircraft'
 import { distanceKm } from '../engine/geo'
@@ -26,6 +26,13 @@ const CLASS_LABEL: Record<SeatClass, string> = {
   economy: 'Econômica',
   business: 'Executiva',
   first: 'Primeira',
+}
+
+function demandForRoute(route: Route | undefined, now: number): Record<SeatClass, number> | null {
+  if (!route) return null
+  const origin = findAirport(route.originCode)
+  const dest = findAirport(route.destCode)
+  return origin && dest ? computeRouteDemand(origin, dest, route.distanceKm, now) : null
 }
 
 export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: number; tutorial?: TutorialStep }) {
@@ -98,6 +105,7 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
         {state.fleet.map((aircraft) => {
           const model = findAircraftModel(aircraft.modelId)
           const route = state.routes.find((r) => r.aircraftId === aircraft.id)
+          const routeDemand = demandForRoute(route, now)
           const isEditing = editingAircraft === aircraft.id
           const flying = aircraft.status === 'flying' && aircraft.flight
 
@@ -143,33 +151,23 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
                   </div>
                   {editingPrices?.routeId === route.id ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {SEAT_CLASSES.filter((cls) => aircraft.seatConfig[cls] > 0).map((cls) => {
-                        const suggested = Math.round(fairPriceForClass(route.distanceKm, cls))
-                        return (
-                          <div key={cls} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: 12, width: 84, color: 'var(--text-dim)' }}>{CLASS_LABEL[cls]}</span>
-                            <span style={{ color: 'var(--text-dim)' }}>$</span>
-                            <NumberInput
-                              style={{ width: 80 }}
-                              min={1}
-                              value={editingPrices.prices[cls]}
-                              onChange={(v) =>
-                                setEditingPrices((p) => p && { ...p, prices: { ...p.prices, [cls]: v } })
-                              }
-                            />
-                            <button
-                              type="button"
-                              style={{ fontSize: 11, padding: '3px 8px' }}
-                              disabled={editingPrices.prices[cls] === suggested}
-                              onClick={() =>
-                                setEditingPrices((p) => p && { ...p, prices: { ...p.prices, [cls]: suggested } })
-                              }
-                            >
-                              Padrão ${suggested}
-                            </button>
-                          </div>
-                        )
-                      })}
+                      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                        {SEAT_CLASSES.filter((cls) => aircraft.seatConfig[cls] > 0).map((cls) => (
+                          <PriceClassField
+                            key={cls}
+                            label={CLASS_LABEL[cls]}
+                            distanceKm={route.distanceKm}
+                            seatClass={cls}
+                            seats={aircraft.seatConfig[cls]}
+                            demand={routeDemand ? routeDemand[cls] : 0}
+                            reputation={state.company.reputation}
+                            price={editingPrices.prices[cls]}
+                            onChange={(v) =>
+                              setEditingPrices((p) => p && { ...p, prices: { ...p.prices, [cls]: v } })
+                            }
+                          />
+                        ))}
+                      </div>
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button
                           className="primary"
