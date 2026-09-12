@@ -444,7 +444,7 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
                 }}
                 style={{ cursor: 'pointer' }}
               >
-                <circle r="9" fill="transparent" />
+                <circle r="16" fill="transparent" />
                 <path
                   d="M10 0 L3 -1.2 L-2 -9 L0 -1.5 L-6 -1 L-8 -4 L-7.5 -0.8 L-9 0 L-7.5 0.8 L-8 4 L-6 1 L0 1.5 L-2 9 L3 1.2 Z"
                   fill={selectedAircraft === fl.ac.id ? 'var(--accent)' : 'var(--text-h)'}
