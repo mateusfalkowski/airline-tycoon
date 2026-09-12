@@ -402,6 +402,7 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
             let fill = isHub ? '#ffd24a' : '#eaf1fb'
             if (isOrigin) fill = '#7fe0a8'
             if (isDest) fill = '#4cc6fb'
+            const big = isHub || isOrigin || isDest
             return (
               <g
                 key={a.code}
@@ -411,21 +412,25 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
                 onClick={() => onAirportClick(a.code)}
                 style={{ cursor: building && !disabled ? 'pointer' : 'default' }}
               >
-                <circle
-                  cx={0}
-                  cy={0}
-                  r={isHub || isOrigin || isDest ? 4 : 2.6}
-                  fill={fill}
-                  stroke="#0a1424"
-                  strokeWidth="1"
-                  opacity={disabled ? 0.15 : on ? 1 : 0.22}
-                />
-                {(isOrigin || isDest) && <circle cx={0} cy={0} r={7} fill="none" stroke={fill} strokeWidth="1.5" />}
+                {/* Generous invisible hit area — much bigger than the pin itself so it's easy to click. */}
+                <circle cx={0} cy={-9} r={13} fill="transparent" />
+                <g transform={big ? 'scale(1.25)' : undefined} opacity={disabled ? 0.15 : on ? 1 : 0.22}>
+                  <path
+                    d="M0 0 L-5.5 -11.5 A6.5 6.5 0 1 1 5.5 -11.5 Z"
+                    fill={fill}
+                    stroke="#0a1424"
+                    strokeWidth="0.8"
+                  />
+                  <circle cx={0} cy={-11.5} r={2.6} fill="#0a1424" />
+                </g>
+                {(isOrigin || isDest) && (
+                  <circle cx={0} cy={-11.5} r={9} fill="none" stroke={fill} strokeWidth="1.5" />
+                )}
                 {isHub && !isOrigin && !isDest && (
-                  <circle cx={0} cy={0} r={6.5} fill="none" stroke="#ffd24a" strokeWidth="1" opacity={on ? 0.8 : 0.2} />
+                  <circle cx={0} cy={-11.5} r={8.5} fill="none" stroke="#ffd24a" strokeWidth="1" opacity={on ? 0.8 : 0.2} />
                 )}
                 {(on && q) || hoverAirport === a.code || isOrigin || isDest ? (
-                  <text x={5} y={3} fontSize="8.5" fill="#fff" stroke="#0a1424" strokeWidth="2.4" paintOrder="stroke">
+                  <text x={9} y={-9} fontSize="8.5" fill="#fff" stroke="#0a1424" strokeWidth="2.4" paintOrder="stroke">
                     {a.code}
                   </text>
                 ) : null}
