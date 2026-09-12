@@ -83,9 +83,15 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
 
   const [view, setView] = useState<MapView>({ zoom: 1, x: 0, y: 0 })
   const svgRef = useRef<SVGSVGElement>(null)
-  const dragRef = useRef<{ startClientX: number; startClientY: number; startX: number; startY: number; moved: boolean } | null>(
-    null,
-  )
+  const dragRef = useRef<{
+    pointerId: number
+    startClientX: number
+    startClientY: number
+    startX: number
+    startY: number
+    moved: boolean
+    captured: boolean
+  } | null>(null)
   const suppressClickRef = useRef(false)
 
   const zoomAt = (cx: number, cy: number, factor: number) => {
@@ -107,8 +113,18 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
   }
 
   const handlePointerDown = (e: PointerEvent<SVGSVGElement>) => {
-    e.currentTarget.setPointerCapture(e.pointerId)
-    dragRef.current = { startClientX: e.clientX, startClientY: e.clientY, startX: view.x, startY: view.y, moved: false }
+    // Deliberately don't capture the pointer yet — only once a real drag starts (see
+    // handlePointerMove). Capturing unconditionally here risked swallowing the plain
+    // click that follows a no-movement press in some browsers.
+    dragRef.current = {
+      pointerId: e.pointerId,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startX: view.x,
+      startY: view.y,
+      moved: false,
+      captured: false,
+    }
   }
 
   const handlePointerMove = (e: PointerEvent<SVGSVGElement>) => {
@@ -117,7 +133,14 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
     if (!d || !rect) return
     // Drag-vs-click is judged in real screen pixels — a click always has a little incidental
     // wobble, and this must be forgiving enough not to eat it.
-    if (Math.abs(e.clientX - d.startClientX) > 6 || Math.abs(e.clientY - d.startClientY) > 6) d.moved = true
+    if (!d.moved && (Math.abs(e.clientX - d.startClientX) > 6 || Math.abs(e.clientY - d.startClientY) > 6)) {
+      d.moved = true
+    }
+    if (!d.moved) return
+    if (!d.captured) {
+      e.currentTarget.setPointerCapture(d.pointerId)
+      d.captured = true
+    }
     const dx = ((e.clientX - d.startClientX) / rect.width) * W
     const dy = ((e.clientY - d.startClientY) / rect.height) * H
     setView((v) => clampView({ ...v, x: d.startX + dx, y: d.startY + dy }))
