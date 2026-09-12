@@ -33,9 +33,9 @@ function clampView(v: MapView): MapView {
   return { zoom, x: Math.min(0, Math.max(minX, v.x)), y: Math.min(0, Math.max(minY, v.y)) }
 }
 
-// NASA "Blue Marble" land/ocean/ice composite — public domain, equirectangular, via Wikimedia's CDN.
-const SATELLITE =
-  'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/Land_ocean_ice_2048.jpg/1280px-Land_ocean_ice_2048.jpg'
+// NASA "Blue Marble: Next Generation" composite — public domain, equirectangular, 5400x2700
+// (high enough res to stay sharp at max map zoom, ~2.5MB).
+const SATELLITE = 'https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg'
 
 const CLASS_LABEL: Record<SeatClass, string> = {
   economy: 'Econômica',
@@ -115,9 +115,11 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
     const d = dragRef.current
     const rect = svgRef.current?.getBoundingClientRect()
     if (!d || !rect) return
+    // Drag-vs-click is judged in real screen pixels — a click always has a little incidental
+    // wobble, and this must be forgiving enough not to eat it.
+    if (Math.abs(e.clientX - d.startClientX) > 6 || Math.abs(e.clientY - d.startClientY) > 6) d.moved = true
     const dx = ((e.clientX - d.startClientX) / rect.width) * W
     const dy = ((e.clientY - d.startClientY) / rect.height) * H
-    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) d.moved = true
     setView((v) => clampView({ ...v, x: d.startX + dx, y: d.startY + dy }))
   }
 
