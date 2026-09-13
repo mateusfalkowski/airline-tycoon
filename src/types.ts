@@ -34,6 +34,11 @@ export type MaintenanceKind = 'light' | 'inspection' | 'aog' | 'weather'
 
 export interface ActiveFlight {
   routeId: string
+  /** Which way along the route this specific flight goes — may be either end first, since
+   *  aircraft alternate direction each dispatch. Absent for flights already in progress when
+   *  this field was introduced; falls back to the route's own origin/dest for those. */
+  originCode?: string
+  destCode?: string
   departedAt: number
   arrivesAt: number
   /** Flight-hours — applied to wear/inspection counters when the flight arrives. */
@@ -51,6 +56,9 @@ export interface OwnedAircraft {
   status: FlightStatus
   seatConfig: SeatConfig
   flight?: ActiveFlight
+  /** Which end of its route this aircraft is currently based at — flips on every dispatch, so
+   *  it actually flies out and back instead of repeating the same leg. Missing means 'origin'. */
+  homeSide?: 'origin' | 'dest'
   autoManaged?: boolean
   /** Airframe wear, 0 (new) to 1 (worn out). */
   wear: number

@@ -134,7 +134,7 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
                   }
                 >
                   {flying
-                    ? `Voando · chega em ${formatCountdown(aircraft.flight!.arrivesAt - now)}`
+                    ? `Voando (${aircraft.flight!.originCode ?? route?.originCode ?? '?'} → ${aircraft.flight!.destCode ?? route?.destCode ?? '?'}) · chega em ${formatCountdown(aircraft.flight!.arrivesAt - now)}`
                     : aircraft.status === 'maintenance'
                       ? `Em manutenção · pronta em ${formatCountdown((aircraft.maintenanceUntil ?? now) - now)}`
                       : 'Em solo'}

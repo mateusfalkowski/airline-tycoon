@@ -321,7 +321,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         reputation: Math.min(100, Math.max(0, state.company.reputation + outcome.reputationDelta)),
       },
       fleet: state.fleet.map((a) =>
-        a.id === aircraft.id ? { ...a, status: 'flying', flight: outcome.flight } : a,
+        a.id === aircraft.id ? { ...a, status: 'flying', flight: outcome.flight, homeSide: outcome.homeSide } : a,
       ),
       ledger: [outcome.ledger, ...state.ledger].slice(0, 100),
       tutorial: state.tutorial === 'dispatch_flight' ? 'done' : state.tutorial,

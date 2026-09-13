@@ -52,6 +52,8 @@ export interface FlightLanding {
 
 export interface DispatchOutcome {
   flight: ActiveFlight
+  /** Where the aircraft will be once this flight lands — the opposite of where it just was. */
+  homeSide: 'origin' | 'dest'
   fuel: FuelState
   co2: CO2State
   cashDelta: number
@@ -61,7 +63,9 @@ export interface DispatchOutcome {
 }
 
 /** Settles a flight's economics at dispatch: tickets are sold and costs paid up front,
- *  the aircraft then flies for the route's real duration. Returns null if data is missing. */
+ *  the aircraft then flies for the route's real duration. Returns null if data is missing.
+ *  Flies whichever direction the aircraft is currently based for (`aircraft.homeSide`), then
+ *  flips it — so successive dispatches alternate out and back along the route. */
 export function dispatchOutcome(
   aircraft: OwnedAircraft,
   route: Route,
@@ -74,9 +78,13 @@ export function dispatchOutcome(
   safActive = false,
 ): DispatchOutcome | null {
   const model = findAircraftModel(aircraft.modelId)
-  const origin = findAirport(route.originCode)
-  const dest = findAirport(route.destCode)
-  const legs = routeLegsKm(route.originCode, route.destCode, route.viaCode)
+  const flyingFrom = aircraft.homeSide ?? 'origin'
+  const fromCode = flyingFrom === 'origin' ? route.originCode : route.destCode
+  const toCode = flyingFrom === 'origin' ? route.destCode : route.originCode
+  const nextHomeSide = flyingFrom === 'origin' ? 'dest' : 'origin'
+  const origin = findAirport(fromCode)
+  const dest = findAirport(toCode)
+  const legs = routeLegsKm(fromCode, toCode, route.viaCode)
   if (!model || !origin || !dest || !legs) return null
 
   const fuelMult = trainingMultiplier(training?.fuel ?? 0)
@@ -112,6 +120,8 @@ export function dispatchOutcome(
   return {
     flight: {
       routeId: route.id,
+      originCode: fromCode,
+      destCode: toCode,
       departedAt: now,
       arrivesAt: now + realFlightMs(plan.hours),
       hours: plan.hours,
@@ -119,6 +129,7 @@ export function dispatchOutcome(
       loadFactor: result.loadFactor,
       profit: Math.round(netProfit),
     },
+    homeSide: nextHomeSide,
     fuel: drawnFuel.fuel,
     co2: drawnCO2.co2,
     cashDelta: netProfit,
@@ -234,7 +245,7 @@ function advanceFleetTo(
         landings.push(outcome.landing)
         autoFlights += 1
         autoProfit += outcome.cashDelta
-        updated = { ...updated, status: 'flying', flight: outcome.flight }
+        updated = { ...updated, status: 'flying', flight: outcome.flight, homeSide: outcome.homeSide }
       }
     }
 
@@ -380,7 +391,7 @@ export function tick(state: GameState): TickResult {
     reputation = clamp(reputation + outcome.reputationDelta, 0, 100)
     ledger.push(outcome.ledger)
     landings.push(outcome.landing)
-    return { ...aircraft, status: 'flying', flight: outcome.flight }
+    return { ...aircraft, status: 'flying', flight: outcome.flight, homeSide: outcome.homeSide }
   })
 
   const withFleet: GameState = {

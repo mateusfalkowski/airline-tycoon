@@ -240,8 +240,11 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
       .filter((ac) => ac.status === 'flying' && ac.flight)
       .map((ac) => {
         const route = state.routes.find((r) => r.id === ac.flight!.routeId)
-        const origin = route ? findAirport(route.originCode) : undefined
-        const dest = route ? findAirport(route.destCode) : undefined
+        // Aircraft alternate direction each dispatch — the flight itself carries which way this
+        // one goes; only a flight in progress from before that field existed falls back to the
+        // route's own origin/dest.
+        const origin = route ? findAirport(ac.flight!.originCode ?? route.originCode) : undefined
+        const dest = route ? findAirport(ac.flight!.destCode ?? route.destCode) : undefined
         const via = route?.viaCode ? findAirport(route.viaCode) : undefined
         if (!route || !origin || !dest) return null
         const model = findAircraftModel(ac.modelId)
