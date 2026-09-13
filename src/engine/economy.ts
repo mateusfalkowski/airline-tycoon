@@ -52,6 +52,15 @@ export function campaignGain(baseGain: number, currentReputation: number): numbe
   return Math.round(clamp((baseGain * (100 - currentReputation)) / 50, 0, baseGain))
 }
 
+/** Staff bonus: a cash sink that buys morale, same diminishing-returns shape as a campaign. */
+export const STAFF_BONUS_COST = 300_000
+export const STAFF_BONUS_BASE_GAIN = 14
+export const STAFF_BONUS_COOLDOWN_MS = 60 * 60 * 1000
+
+export function staffBonusGain(currentMorale: number): number {
+  return Math.round(clamp((STAFF_BONUS_BASE_GAIN * (100 - currentMorale)) / 50, 0, STAFF_BONUS_BASE_GAIN))
+}
+
 /** Loans: borrow against company value, pay ~1%/day interest on the outstanding balance. */
 export const LOAN_DAILY_RATE = 0.01
 export const LOAN_VALUATION_LIMIT = 0.6

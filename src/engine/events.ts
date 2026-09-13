@@ -16,6 +16,7 @@ export interface RandomEventOutcome {
   label: string
   cashDelta: number
   reputationDelta: number
+  moraleDelta: number
   /** Present only for an 'aog' event — the fleet with one aircraft freshly grounded. */
   fleet?: OwnedAircraft[]
 }
@@ -35,6 +36,10 @@ export function rollRandomEvent(state: GameState, now: number): RandomEventOutco
 
   const pool: EventKind[] = ['fuel_spike', 'strike_delay', 'incident', 'demand_boom', 'good_pr', 'route_subsidy']
   if (idleFleet.length > 0) pool.push('aog')
+  // Low staff morale makes a strike more likely to be the one that fires — up to +5 extra
+  // entries at 0 morale, none at 100, so managing morale actually lowers the odds.
+  const strikeWeight = Math.round((100 - state.staffMorale) / 20)
+  for (let i = 0; i < strikeWeight; i++) pool.push('strike_delay')
   const kind = pool[Math.floor(Math.random() * pool.length)]
 
   switch (kind) {
@@ -44,6 +49,7 @@ export function rollRandomEvent(state: GameState, now: number): RandomEventOutco
         label: 'Pico de combustível: abastecimento emergencial saiu mais caro',
         cashDelta: -cost,
         reputationDelta: 0,
+        moraleDelta: 0,
       }
     }
     case 'strike_delay': {
@@ -52,6 +58,7 @@ export function rollRandomEvent(state: GameState, now: number): RandomEventOutco
         label: 'Greve pontual gerou custos de compensação a passageiros',
         cashDelta: -cost,
         reputationDelta: -2,
+        moraleDelta: -(6 + Math.random() * 8),
       }
     }
     case 'incident': {
@@ -59,6 +66,7 @@ export function rollRandomEvent(state: GameState, now: number): RandomEventOutco
         label: 'Incidente operacional gerou repercussão negativa',
         cashDelta: 0,
         reputationDelta: -(8 + Math.random() * 10),
+        moraleDelta: -(4 + Math.random() * 6),
       }
     }
     case 'demand_boom': {
@@ -67,6 +75,7 @@ export function rollRandomEvent(state: GameState, now: number): RandomEventOutco
         label: 'Evento local disparou a procura por passagens — voos saíram lotados',
         cashDelta: gain,
         reputationDelta: 0,
+        moraleDelta: 0,
       }
     }
     case 'good_pr': {
@@ -74,6 +83,7 @@ export function rollRandomEvent(state: GameState, now: number): RandomEventOutco
         label: 'Cobertura de imprensa espontânea elevou a reputação',
         cashDelta: 0,
         reputationDelta: 6 + Math.random() * 8,
+        moraleDelta: 4 + Math.random() * 6,
       }
     }
     case 'route_subsidy': {
@@ -82,6 +92,7 @@ export function rollRandomEvent(state: GameState, now: number): RandomEventOutco
         label: 'Subsídio de rota regional creditado',
         cashDelta: gain,
         reputationDelta: 0,
+        moraleDelta: 0,
       }
     }
     case 'aog': {
@@ -97,6 +108,7 @@ export function rollRandomEvent(state: GameState, now: number): RandomEventOutco
         label: `Falha técnica tirou ${model?.name ?? 'uma aeronave'} de operação temporariamente`,
         cashDelta: 0,
         reputationDelta: 0,
+        moraleDelta: 0,
         fleet,
       }
     }

@@ -10,11 +10,14 @@ import {
   REVENUE_TEAM_UNLOCK_FLIGHTS,
   LOAN_DAILY_RATE,
   maxLoan,
+  STAFF_BONUS_COST,
+  staffBonusGain,
 } from '../engine/economy'
 import { MILESTONES } from '../engine/milestones'
 
 export function CompanyPanel({ state, now }: { state: GameState; now: number }) {
   const runCampaign = useGameStore((s) => s.runCampaign)
+  const giveStaffBonus = useGameStore((s) => s.giveStaffBonus)
   const toggleRevenueTeam = useGameStore((s) => s.toggleRevenueTeam)
   const takeLoan = useGameStore((s) => s.takeLoan)
   const repayLoan = useGameStore((s) => s.repayLoan)
@@ -23,6 +26,10 @@ export function CompanyPanel({ state, now }: { state: GameState; now: number }) 
   const rep = state.company.reputation
   const cooldown = (state.company.campaignReadyAt ?? 0) - now
   const onCooldown = cooldown > 0
+  const morale = state.staffMorale
+  const staffCooldown = (state.company.staffBonusReadyAt ?? 0) - now
+  const staffOnCooldown = staffCooldown > 0
+  const staffGain = staffBonusGain(morale)
 
   const credit = maxLoan(getCompanyValuation(state), state.debt)
   const maxRepay = Math.min(state.debt, Math.floor(state.cash))
@@ -121,6 +128,45 @@ export function CompanyPanel({ state, now }: { state: GameState; now: number }) 
             </div>
           )
         })}
+      </div>
+
+      <h3 style={{ fontSize: 15, marginTop: 24 }}>Moral da equipe</h3>
+      <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: -6, maxWidth: 520 }}>
+        Cai com incidentes e greves, sobe com PR espontâneo ou com um bônus pago do próprio bolso. Moral baixa
+        deixa uma greve mais provável entre os eventos aleatórios — é um ciclo que se realimenta se ignorado.
+        {staffOnCooldown && (
+          <>
+            {' '}
+            <strong style={{ color: 'var(--text-h)' }}>Próximo bônus em {formatCountdown(staffCooldown)}.</strong>
+          </>
+        )}
+      </p>
+
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ height: 10, borderRadius: 999, background: 'var(--border)', overflow: 'hidden', maxWidth: 420 }}>
+          <div
+            style={{
+              width: `${morale}%`,
+              height: '100%',
+              background: morale < 40 ? 'var(--red)' : morale < 70 ? 'var(--gold)' : 'var(--green)',
+            }}
+          />
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <span className="badge" style={morale < 40 ? { color: 'var(--red)', borderColor: 'var(--red)' } : undefined}>
+          {Math.round(morale)}/100{morale < 40 ? ' · risco de greve elevado' : ''}
+        </span>
+        <button
+          className="primary"
+          style={{ fontSize: 12 }}
+          disabled={staffOnCooldown || state.cash < STAFF_BONUS_COST || staffGain === 0}
+          title={staffOnCooldown ? 'Aguarde o intervalo' : state.cash < STAFF_BONUS_COST ? 'Caixa insuficiente' : undefined}
+          onClick={giveStaffBonus}
+        >
+          Bônus para a equipe · {formatMoney(STAFF_BONUS_COST)} (+{staffGain} moral)
+        </button>
       </div>
 
       <h3 style={{ fontSize: 15, marginTop: 24 }}>Equipe de revenue</h3>
