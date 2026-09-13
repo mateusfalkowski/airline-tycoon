@@ -541,7 +541,7 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
               position: 'absolute',
               right: 10,
               top: 10,
-              width: 220,
+              width: 250,
               maxWidth: 'calc(100% - 20px)',
               background: 'var(--panel-raised)',
               border: '1px solid var(--accent)',
@@ -568,7 +568,41 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
                 {Math.round(selected.f * 100)}% · chega em {formatCountdown(selected.ac.flight!.arrivesAt - now)}
               </div>
             </div>
-            <div style={{ color: 'var(--text-dim)', marginTop: 6 }}>
+
+            {selected.ac.flight && (
+              <div
+                style={{
+                  marginTop: 8,
+                  paddingTop: 8,
+                  borderTop: '1px solid var(--border-soft)',
+                  display: 'flex',
+                  gap: 14,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <span className="stat-chip">
+                  {selected.ac.flight.passengers} pax · {Math.round(selected.ac.flight.loadFactor * 100)}% ocupação
+                </span>
+                <span
+                  className="stat-chip"
+                  style={{ color: selected.ac.flight.profit >= 0 ? 'var(--green)' : 'var(--red)' }}
+                >
+                  {selected.ac.flight.profit >= 0 ? '+' : ''}
+                  {formatMoney(selected.ac.flight.profit)} nesse voo
+                </span>
+              </div>
+            )}
+
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border-soft)' }}>
+              {SEAT_CLASSES.filter((cls) => selected.ac.seatConfig[cls] > 0).map((cls) => (
+                <div key={cls} className="stat-chip" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>{CLASS_LABEL[cls]}</span>
+                  <strong style={{ color: 'var(--text-h)' }}>{formatMoney(selected.route.prices[cls])}</strong>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ color: 'var(--text-dim)', marginTop: 8 }}>
               Desgaste {Math.round(selected.ac.wear * 100)}%
               {selected.ac.autoManaged ? ' · operação automática' : ''}
             </div>
