@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { GameState } from '../types'
 import { useGameStore } from '../store/gameStore'
 import { formatCountdown, formatMoney } from '../format'
-import { nextDepotUpgrade, FUEL_PRICE_INTERVAL_MS } from '../engine/fuel'
+import { nextDepotUpgrade, FUEL_PRICE_INTERVAL_MS, SAF_PRICE_PREMIUM, SAF_EMISSIONS_CUT } from '../engine/fuel'
 import { CO2_PRICE_INTERVAL_MS, CO2_PER_FUEL_TONNE } from '../engine/co2'
 import { NumberInput } from './NumberInput'
 
@@ -11,6 +11,7 @@ const t = (tonnes: number) => tonnes.toLocaleString('pt-BR', { maximumFractionDi
 
 export function FuelPanel({ state, now }: { state: GameState; now: number }) {
   const buyFuel = useGameStore((s) => s.buyFuel)
+  const toggleSAF = useGameStore((s) => s.toggleSAF)
   const upgradeDepot = useGameStore((s) => s.upgradeDepot)
   const buyCO2Quota = useGameStore((s) => s.buyCO2Quota)
   const { fuel, co2 } = state
@@ -21,10 +22,12 @@ export function FuelPanel({ state, now }: { state: GameState; now: number }) {
   const roomTonnes = Math.max(0, fuel.capacity - fuel.stored)
   const [buyKg, setBuyKg] = useState(0)
   const upgrade = nextDepotUpgrade(fuel.capacity)
+  const safPriceMult = state.safEnabled ? SAF_PRICE_PREMIUM : 1
 
   // buyFuel takes tonnes.
   const buyTonnes = (tonnes: number) => buyFuel(tonnes)
-  const priceFor = (tonnes: number) => formatMoney(Math.round(Math.min(tonnes, roomTonnes) * fuel.price))
+  const priceFor = (tonnes: number) =>
+    formatMoney(Math.round(Math.min(tonnes, roomTonnes) * fuel.price * safPriceMult))
 
   const co2Prev = co2.history.length >= 2 ? co2.history[co2.history.length - 2].price : co2.price
   const co2Delta = co2.price - co2Prev
@@ -36,6 +39,36 @@ export function FuelPanel({ state, now }: { state: GameState; now: number }) {
   return (
     <div>
       <h3>Combustível</h3>
+
+      <div
+        style={{
+          display: 'flex',
+          gap: 10,
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          marginBottom: 16,
+          padding: '10px 12px',
+          borderRadius: 'var(--radius-sm)',
+          background: 'var(--panel-alt)',
+          border: '1px solid var(--border-soft)',
+        }}
+      >
+        <span className="badge" style={state.safEnabled ? { color: 'var(--green)', borderColor: 'var(--green)' } : undefined}>
+          {state.safEnabled ? 'SAF ativo' : 'Combustível padrão'}
+        </span>
+        <span style={{ color: 'var(--text-dim)', fontSize: 12 }}>
+          SAF (combustível sustentável) custa {Math.round((SAF_PRICE_PREMIUM - 1) * 100)}% a mais por tonelada
+          comprada, mas corta {Math.round((1 - SAF_EMISSIONS_CUT) * 100)}% do CO2 emitido por voo.
+          {!state.safEnabled && ' Ativar rende uma reputação única pela imagem.'}
+        </span>
+        <button
+          className={state.safEnabled ? undefined : 'primary'}
+          style={{ fontSize: 12, marginLeft: 'auto' }}
+          onClick={toggleSAF}
+        >
+          {state.safEnabled ? 'Voltar ao padrão' : 'Usar SAF'}
+        </button>
+      </div>
 
       <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'baseline', marginBottom: 12 }}>
         <div>

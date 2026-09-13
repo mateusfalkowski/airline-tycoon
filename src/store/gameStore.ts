@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { GameState, OwnedAircraft, Route, SeatClass, SeatConfig, TrainingCategory } from '../types'
 import type { TutorialStep } from '../types'
 import { findAircraftModel } from '../data/aircraft'
-import { findAirport, routeLegsKm } from '../data/airports'
+import { routeLegsKm } from '../data/airports'
 import {
   planFlight,
   realFlightMs,
@@ -30,7 +30,7 @@ import {
   trainingCost,
   TRAINING_LABEL,
 } from '../engine/economy'
-import { createInitialFuel, buyFuel, nextDepotUpgrade } from '../engine/fuel'
+import { createInitialFuel, buyFuel, nextDepotUpgrade, SAF_PRICE_PREMIUM, SAF_ACTIVATION_REPUTATION_BONUS } from '../engine/fuel'
 import { createInitialCO2, buyCO2 } from '../engine/co2'
 import { rollNextEventAt } from '../engine/events'
 import { tick as runTick, catchUp, dispatchOutcome } from '../engine/simulation'
@@ -82,6 +82,7 @@ function migrateState(saved: GameState): GameState {
     nextEventAt: saved.nextEventAt ?? rollNextEventAt(Date.now()),
     staffMorale: saved.staffMorale ?? 70,
     training: saved.training ?? { fuel: 0, maintenance: 0, emissions: 0, crew: 0 },
+    safEnabled: saved.safEnabled ?? false,
   }
 }
 
@@ -104,6 +105,7 @@ interface GameStore {
   dispatchFlight: (routeId: string) => void
   toggleAutoManage: (aircraftId: string) => void
   buyFuel: (litres: number) => void
+  toggleSAF: () => void
   buyCO2Quota: (tonnes: number) => void
   upgradeDepot: () => void
   runCampaign: (campaignId: string) => void
@@ -163,6 +165,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       nextEventAt: rollNextEventAt(Date.now()),
       staffMorale: 70,
       training: { fuel: 0, maintenance: 0, emissions: 0, crew: 0 },
+      safEnabled: false,
     }
     set({ state: newState })
     persist(newState)
@@ -304,6 +307,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       now,
       state.revenueTeam ? REVENUE_TEAM_CUT : 0,
       state.training,
+      state.safEnabled,
     )
     if (!outcome) return
 
@@ -379,11 +383,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
   buyFuel: (tonnes) => {
     const state = get().state
     if (!state || tonnes <= 0) return
-    const affordable = state.cash / state.fuel.price
+    const priceMult = state.safEnabled ? SAF_PRICE_PREMIUM : 1
+    const affordable = state.cash / (state.fuel.price * priceMult)
     const room = state.fuel.capacity - state.fuel.stored
     const amount = Math.min(tonnes, affordable, room)
     if (amount <= 0) return
-    const { fuel, cost } = buyFuel(state.fuel, amount)
+    const { fuel, cost } = buyFuel(state.fuel, amount, priceMult)
     const now = Date.now()
     const next: GameState = {
       ...state,
@@ -393,11 +398,38 @@ export const useGameStore = create<GameStore>((set, get) => ({
         {
           id: `evt-fuel-${now}`,
           t: now,
-          label: `Comprou ${Math.round(amount * 1000).toLocaleString('pt-BR')} kg de combustível`,
+          label: `Comprou ${Math.round(amount * 1000).toLocaleString('pt-BR')} kg de combustível${state.safEnabled ? ' (SAF)' : ''}`,
           amount: -Math.round(cost),
         },
         ...state.ledger,
       ].slice(0, 100),
+    }
+    set({ state: next })
+    persist(next)
+  },
+
+  toggleSAF: () => {
+    const state = get().state
+    if (!state) return
+    const now = Date.now()
+    const turningOn = !state.safEnabled
+    const next: GameState = {
+      ...state,
+      safEnabled: turningOn,
+      company: turningOn
+        ? { ...state.company, reputation: Math.min(100, state.company.reputation + SAF_ACTIVATION_REPUTATION_BONUS) }
+        : state.company,
+      ledger: turningOn
+        ? [
+            {
+              id: `evt-saf-${now}`,
+              t: now,
+              label: `Passou a usar combustível sustentável, SAF (+${SAF_ACTIVATION_REPUTATION_BONUS} reputação)`,
+              amount: 0,
+            },
+            ...state.ledger,
+          ].slice(0, 100)
+        : state.ledger,
     }
     set({ state: next })
     persist(next)

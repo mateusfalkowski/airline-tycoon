@@ -171,4 +171,8 @@ export interface GameState {
   nextEventAt: number
   /** Staff morale, 0-100. Low morale raises the odds of a strike event. */
   staffMorale: number
+  /** Permanent per-category boosts, bought with cash. Levels 0-5 each. */
+  training: TrainingLevels
+  /** Sustainable Aviation Fuel — costs more per tonne bought, cuts emissions per flight. */
+  safEnabled: boolean
 }

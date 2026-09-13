@@ -30,7 +30,7 @@ import {
   CREW_BONUS_PER_LEVEL,
 } from './economy'
 import { computeRouteDemand } from './demand'
-import { advanceFuelMarket, drawFuel } from './fuel'
+import { advanceFuelMarket, drawFuel, SAF_EMISSIONS_CUT } from './fuel'
 import { CO2_PER_FUEL_TONNE, advanceCO2Market, drawCO2 } from './co2'
 import { runBotTick } from './stockMarket'
 import { updateMilestones } from './milestones'
@@ -71,6 +71,7 @@ export function dispatchOutcome(
   now: number,
   revenueCut = 0,
   training?: TrainingLevels,
+  safActive = false,
 ): DispatchOutcome | null {
   const model = findAircraftModel(aircraft.modelId)
   const origin = findAirport(route.originCode)
@@ -79,7 +80,7 @@ export function dispatchOutcome(
   if (!model || !origin || !dest || !legs) return null
 
   const fuelMult = trainingMultiplier(training?.fuel ?? 0)
-  const emissionsMult = trainingMultiplier(training?.emissions ?? 0)
+  const emissionsMult = trainingMultiplier(training?.emissions ?? 0) * (safActive ? SAF_EMISSIONS_CUT : 1)
   const crewBonus = (training?.crew ?? 0) * CREW_BONUS_PER_LEVEL
 
   const plan = planFlight(model, legs.leg1Km, legs.leg2Km, fuelMult)
@@ -176,6 +177,7 @@ function advanceFleetTo(
   revenueCut: number,
   now: number,
   training: TrainingLevels,
+  safActive: boolean,
 ): FleetAdvanceResult {
   let working = fleet
   const landings: FlightLanding[] = []
@@ -222,7 +224,7 @@ function advanceFleetTo(
     if (updated.autoManaged && updated.hoursSinceCheck < CHECK_INTERVAL_HOURS) {
       const route = routes.find((r) => r.aircraftId === updated.id)
       const outcome = route
-        ? dispatchOutcome(updated, route, fuel, co2, reputation, pickTime, revenueCut, training)
+        ? dispatchOutcome(updated, route, fuel, co2, reputation, pickTime, revenueCut, training, safActive)
         : null
       if (outcome) {
         fuel = outcome.fuel
@@ -370,7 +372,7 @@ export function tick(state: GameState): TickResult {
     if (aircraft.hoursSinceCheck >= CHECK_INTERVAL_HOURS) return aircraft
     const route = routes.find((r) => r.aircraftId === aircraft.id)
     if (!route) return aircraft
-    const outcome = dispatchOutcome(aircraft, route, fuel, co2, reputation, now, revenueCut, state.training)
+    const outcome = dispatchOutcome(aircraft, route, fuel, co2, reputation, now, revenueCut, state.training, state.safEnabled)
     if (!outcome) return aircraft
     fuel = outcome.fuel
     co2 = outcome.co2
@@ -433,6 +435,7 @@ export function catchUp(state: GameState): TickResult {
     revenueCut,
     now,
     state.training,
+    state.safEnabled,
   )
 
   const withAdvance: GameState = {

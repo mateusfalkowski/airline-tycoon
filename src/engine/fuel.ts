@@ -20,6 +20,13 @@ export function nextDepotUpgrade(capacity: number): { capacity: number; cost: nu
   return DEPOT_TIERS.find((tier) => tier.capacity > capacity) ?? null
 }
 
+/** Sustainable Aviation Fuel: costs more at the pump, burns cleaner. A standing choice, not a
+ *  one-off purchase — every buy while it's on pays the premium, every flight while it's on
+ *  emits less. */
+export const SAF_PRICE_PREMIUM = 1.5
+export const SAF_EMISSIONS_CUT = 0.6
+export const SAF_ACTIVATION_REPUTATION_BONUS = 5
+
 export function createInitialFuel(now: number): FuelState {
   const history: { t: number; price: number }[] = []
   let price = FUEL_START_PRICE
@@ -66,13 +73,15 @@ export function advanceFuelMarket(fuel: FuelState, now: number): FuelState {
   }
 }
 
-/** Adds `litres` bought at the current spot price into the depot, blending the average cost. */
-export function buyFuel(fuel: FuelState, litres: number): { fuel: FuelState; cost: number } {
+/** Adds `litres` bought at the current spot price into the depot, blending the average cost.
+ *  `priceMult` applies the SAF premium when buying sustainable fuel. */
+export function buyFuel(fuel: FuelState, litres: number, priceMult = 1): { fuel: FuelState; cost: number } {
   const room = Math.max(0, fuel.capacity - fuel.stored)
   const amount = clamp(litres, 0, room)
-  const cost = amount * fuel.price
+  const effectivePrice = fuel.price * priceMult
+  const cost = amount * effectivePrice
   const stored = fuel.stored + amount
-  const avgCost = stored > 0 ? (fuel.stored * fuel.avgCost + amount * fuel.price) / stored : fuel.price
+  const avgCost = stored > 0 ? (fuel.stored * fuel.avgCost + amount * effectivePrice) / stored : effectivePrice
   return { fuel: { ...fuel, stored, avgCost }, cost }
 }
 
