@@ -5,6 +5,7 @@ function category(label: string): string {
   if (label.startsWith('Voo ')) return 'Voo'
   if (label.startsWith('Custos fixos')) return 'Custo fixo'
   if (label.startsWith('Comprou') && label.includes(' kg')) return 'Combustível'
+  if (label.includes('cota de CO2')) return 'CO2'
   if (label.startsWith('Comprou') || label.startsWith('Ampliou')) return 'Frota'
   if (label.startsWith('Revisão') || label.startsWith('Manutenção')) return 'Manutenção'
   if (label.includes('gerente')) return 'Gerência'

@@ -3,14 +3,17 @@ import type { GameState } from '../types'
 import { useGameStore } from '../store/gameStore'
 import { formatCountdown, formatMoney } from '../format'
 import { nextDepotUpgrade, FUEL_PRICE_INTERVAL_MS } from '../engine/fuel'
+import { CO2_PRICE_INTERVAL_MS, CO2_PER_FUEL_TONNE } from '../engine/co2'
 import { NumberInput } from './NumberInput'
 
 const kg = (tonnes: number) => Math.round(tonnes * 1000).toLocaleString('pt-BR')
+const t = (tonnes: number) => tonnes.toLocaleString('pt-BR', { maximumFractionDigits: 1 })
 
 export function FuelPanel({ state, now }: { state: GameState; now: number }) {
   const buyFuel = useGameStore((s) => s.buyFuel)
   const upgradeDepot = useGameStore((s) => s.upgradeDepot)
-  const { fuel } = state
+  const buyCO2Quota = useGameStore((s) => s.buyCO2Quota)
+  const { fuel, co2 } = state
 
   const prev = fuel.history.length >= 2 ? fuel.history[fuel.history.length - 2].price : fuel.price
   const delta = fuel.price - prev
@@ -22,6 +25,13 @@ export function FuelPanel({ state, now }: { state: GameState; now: number }) {
   // buyFuel takes tonnes.
   const buyTonnes = (tonnes: number) => buyFuel(tonnes)
   const priceFor = (tonnes: number) => formatMoney(Math.round(Math.min(tonnes, roomTonnes) * fuel.price))
+
+  const co2Prev = co2.history.length >= 2 ? co2.history[co2.history.length - 2].price : co2.price
+  const co2Delta = co2.price - co2Prev
+  const co2NextChange = co2.lastPriceTick + CO2_PRICE_INTERVAL_MS - now
+  const co2Room = Math.max(0, co2.capacity - co2.stored)
+  const [buyCO2Tonnes, setBuyCO2Tonnes] = useState(0)
+  const co2PriceFor = (tonnes: number) => formatMoney(Math.round(Math.min(tonnes, co2Room) * co2.price))
 
   return (
     <div>
@@ -100,6 +110,74 @@ export function FuelPanel({ state, now }: { state: GameState; now: number }) {
           Voos consomem primeiro do depósito (ao custo médio que você pagou); o que faltar é comprado no preço
           spot do momento. Estoque quando estiver barato.
         </p>
+      </div>
+
+      <div style={{ marginTop: 28, paddingTop: 18, borderTop: '1px solid var(--border-soft)' }}>
+        <h3 style={{ fontSize: 15 }}>Cotas de CO2</h3>
+        <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: -6, marginBottom: 14, maxWidth: 560 }}>
+          Cada voo emite {CO2_PER_FUEL_TONNE.toFixed(2)}t de CO2 por tonelada de combustível queimada — o fator
+          padrão da aviação. Sem cota suficiente guardada, o voo compra o que faltar no preço spot do momento.
+        </p>
+
+        <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'baseline', marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-dim)' }}>
+              Preço spot
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-h)' }}>
+              {formatMoney(Math.round(co2.price))}
+              <span style={{ fontSize: 13, marginLeft: 8, color: co2Delta >= 0 ? 'var(--red)' : 'var(--green)' }}>
+                {co2Delta >= 0 ? '▲' : '▼'} {formatMoney(Math.round(Math.abs(co2Delta)))}
+              </span>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>
+              por tonelada · próxima mudança em {co2NextChange > 0 ? formatCountdown(co2NextChange) : 'instantes'}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-dim)' }}>
+              Custo médio guardado
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-h)' }}>
+              {formatMoney(Math.round(co2.avgCost))} / t
+            </div>
+          </div>
+        </div>
+
+        <FuelChart history={co2.history} />
+
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 4 }}>
+            Guardado: {t(co2.stored)} / {t(co2.capacity)} t
+          </div>
+          <div style={{ height: 10, borderRadius: 999, background: 'var(--border)', overflow: 'hidden' }}>
+            <div
+              style={{
+                width: `${Math.min(100, (co2.stored / co2.capacity) * 100)}%`,
+                height: '100%',
+                background: 'var(--green)',
+              }}
+            />
+          </div>
+        </div>
+
+        <div style={{ marginTop: 14, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button onClick={() => buyCO2Quota(co2.capacity * 0.25)} disabled={co2Room <= 0}>
+            +25% · {co2PriceFor(co2.capacity * 0.25)}
+          </button>
+          <button onClick={() => buyCO2Quota(co2.capacity * 0.5)} disabled={co2Room <= 0}>
+            +50% · {co2PriceFor(co2.capacity * 0.5)}
+          </button>
+          <button className="primary" onClick={() => buyCO2Quota(co2Room)} disabled={co2Room <= 0}>
+            Encher · {co2PriceFor(co2Room)}
+          </button>
+          <span style={{ color: 'var(--text-dim)' }}>ou</span>
+          <NumberInput style={{ width: 90 }} min={0} value={buyCO2Tonnes} onChange={setBuyCO2Tonnes} />
+          <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>t</span>
+          <button onClick={() => buyCO2Quota(buyCO2Tonnes)} disabled={buyCO2Tonnes <= 0}>
+            Comprar · {co2PriceFor(buyCO2Tonnes)}
+          </button>
+        </div>
       </div>
     </div>
   )
