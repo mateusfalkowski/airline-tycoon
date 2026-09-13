@@ -10,7 +10,7 @@ import {
   REVENUE_TEAM_UNLOCK_FLIGHTS,
   LOAN_DAILY_RATE,
   maxLoan,
-  STAFF_BONUS_COST,
+  staffBonusCost,
   staffBonusGain,
 } from '../engine/economy'
 import { MILESTONES } from '../engine/milestones'
@@ -30,6 +30,7 @@ export function CompanyPanel({ state, now }: { state: GameState; now: number }) 
   const staffCooldown = (state.company.staffBonusReadyAt ?? 0) - now
   const staffOnCooldown = staffCooldown > 0
   const staffGain = staffBonusGain(morale)
+  const staffCost = staffBonusCost(state.fleet.length)
 
   const credit = maxLoan(getCompanyValuation(state), state.debt)
   const maxRepay = Math.min(state.debt, Math.floor(state.cash))
@@ -161,11 +162,11 @@ export function CompanyPanel({ state, now }: { state: GameState; now: number }) 
         <button
           className="primary"
           style={{ fontSize: 12 }}
-          disabled={staffOnCooldown || state.cash < STAFF_BONUS_COST || staffGain === 0}
-          title={staffOnCooldown ? 'Aguarde o intervalo' : state.cash < STAFF_BONUS_COST ? 'Caixa insuficiente' : undefined}
+          disabled={staffOnCooldown || state.cash < staffCost || staffGain === 0}
+          title={staffOnCooldown ? 'Aguarde o intervalo' : state.cash < staffCost ? 'Caixa insuficiente' : undefined}
           onClick={giveStaffBonus}
         >
-          Bônus para a equipe · {formatMoney(STAFF_BONUS_COST)} (+{staffGain} moral)
+          Bônus para a equipe · {formatMoney(staffCost)} (+{staffGain} moral)
         </button>
       </div>
 

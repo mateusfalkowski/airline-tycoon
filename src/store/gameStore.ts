@@ -24,8 +24,8 @@ import {
   REVENUE_TEAM_UNLOCK_FLIGHTS,
   REVENUE_TEAM_CUT,
   maxLoan,
-  STAFF_BONUS_COST,
   STAFF_BONUS_COOLDOWN_MS,
+  staffBonusCost,
   staffBonusGain,
 } from '../engine/economy'
 import { createInitialFuel, buyFuel, nextDepotUpgrade } from '../engine/fuel'
@@ -513,17 +513,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   giveStaffBonus: () => {
     const state = get().state
-    if (!state || state.cash < STAFF_BONUS_COST) return
+    if (!state) return
+    const cost = staffBonusCost(state.fleet.length)
+    if (state.cash < cost) return
     const now = Date.now()
     if ((state.company.staffBonusReadyAt ?? 0) > now) return
     const gain = staffBonusGain(state.staffMorale)
     const next: GameState = {
       ...state,
-      cash: state.cash - STAFF_BONUS_COST,
+      cash: state.cash - cost,
       company: { ...state.company, staffBonusReadyAt: now + STAFF_BONUS_COOLDOWN_MS },
       staffMorale: Math.min(100, state.staffMorale + gain),
       ledger: [
-        { id: `evt-staff-${now}`, t: now, label: `Bônus para a equipe (+${gain} moral)`, amount: -STAFF_BONUS_COST },
+        { id: `evt-staff-${now}`, t: now, label: `Bônus para a equipe (+${gain} moral)`, amount: -cost },
         ...state.ledger,
       ].slice(0, 100),
     }

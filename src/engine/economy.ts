@@ -52,10 +52,16 @@ export function campaignGain(baseGain: number, currentReputation: number): numbe
   return Math.round(clamp((baseGain * (100 - currentReputation)) / 50, 0, baseGain))
 }
 
-/** Staff bonus: a cash sink that buys morale, same diminishing-returns shape as a campaign. */
-export const STAFF_BONUS_COST = 300_000
+/** Staff bonus: a cash sink that buys morale, same diminishing-returns shape as a campaign.
+ *  Cost scales with fleet size — a bigger team costs more to treat. */
+export const STAFF_BONUS_COST_PER_AIRCRAFT = 40_000
+export const STAFF_BONUS_MIN_COST = 60_000
 export const STAFF_BONUS_BASE_GAIN = 14
 export const STAFF_BONUS_COOLDOWN_MS = 60 * 60 * 1000
+
+export function staffBonusCost(fleetSize: number): number {
+  return Math.max(STAFF_BONUS_MIN_COST, STAFF_BONUS_COST_PER_AIRCRAFT * fleetSize)
+}
 
 export function staffBonusGain(currentMorale: number): number {
   return Math.round(clamp((STAFF_BONUS_BASE_GAIN * (100 - currentMorale)) / 50, 0, STAFF_BONUS_BASE_GAIN))
