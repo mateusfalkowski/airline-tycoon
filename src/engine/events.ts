@@ -7,6 +7,7 @@ import { clamp, realFlightMs } from './economy'
 export const EVENT_MIN_INTERVAL_MS = 4 * 60 * 60 * 1000
 export const EVENT_MAX_INTERVAL_MS = 10 * 60 * 60 * 1000
 const AOG_DURATION_HOURS = 0.25
+const WEATHER_DURATION_HOURS = 0.5
 
 export function rollNextEventAt(now: number): number {
   return now + EVENT_MIN_INTERVAL_MS + Math.random() * (EVENT_MAX_INTERVAL_MS - EVENT_MIN_INTERVAL_MS)
@@ -17,11 +18,19 @@ export interface RandomEventOutcome {
   cashDelta: number
   reputationDelta: number
   moraleDelta: number
-  /** Present only for an 'aog' event — the fleet with one aircraft freshly grounded. */
+  /** Present only for an 'aog' or 'weather' event — the fleet with one aircraft freshly grounded. */
   fleet?: OwnedAircraft[]
 }
 
-type EventKind = 'fuel_spike' | 'strike_delay' | 'incident' | 'aog' | 'demand_boom' | 'good_pr' | 'route_subsidy'
+type EventKind =
+  | 'fuel_spike'
+  | 'strike_delay'
+  | 'incident'
+  | 'aog'
+  | 'weather'
+  | 'demand_boom'
+  | 'good_pr'
+  | 'route_subsidy'
 
 /** A random slice of current valuation, bounded so it stays meaningful early and sane late. */
 function valuationShare(state: GameState, minPct: number, maxPct: number, floor: number, cap: number): number {
@@ -35,7 +44,7 @@ export function rollRandomEvent(state: GameState, now: number): RandomEventOutco
   const idleFleet = state.fleet.filter((a) => a.status === 'idle')
 
   const pool: EventKind[] = ['fuel_spike', 'strike_delay', 'incident', 'demand_boom', 'good_pr', 'route_subsidy']
-  if (idleFleet.length > 0) pool.push('aog')
+  if (idleFleet.length > 0) pool.push('aog', 'weather')
   // Low staff morale makes a strike more likely to be the one that fires — up to +5 extra
   // entries at 0 morale, none at 100, so managing morale actually lowers the odds.
   const strikeWeight = Math.round((100 - state.staffMorale) / 20)
@@ -107,6 +116,24 @@ export function rollRandomEvent(state: GameState, now: number): RandomEventOutco
       return {
         label: `Falha técnica tirou ${model?.name ?? 'uma aeronave'} de operação temporariamente`,
         cashDelta: 0,
+        reputationDelta: 0,
+        moraleDelta: 0,
+        fleet,
+      }
+    }
+    case 'weather': {
+      const target = idleFleet[Math.floor(Math.random() * idleFleet.length)]
+      const model = findAircraftModel(target.modelId)
+      const fee = valuationShare(state, 0.001, 0.003, 1_000, 600_000)
+      const groundedUntil = now + realFlightMs(WEATHER_DURATION_HOURS)
+      const fleet = state.fleet.map((a) =>
+        a.id === target.id
+          ? { ...a, status: 'maintenance' as const, maintenanceKind: 'weather' as const, maintenanceUntil: groundedUntil }
+          : a,
+      )
+      return {
+        label: `Tempestade atrasou ${model?.name ?? 'uma aeronave'} — taxa de degelo cobrada antes da liberação`,
+        cashDelta: -fee,
         reputationDelta: 0,
         moraleDelta: 0,
         fleet,

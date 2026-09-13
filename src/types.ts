@@ -30,7 +30,7 @@ export type SeatConfig = Record<SeatClass, number>
 
 export type FlightStatus = 'idle' | 'flying' | 'maintenance'
 
-export type MaintenanceKind = 'light' | 'inspection' | 'aog'
+export type MaintenanceKind = 'light' | 'inspection' | 'aog' | 'weather'
 
 export interface ActiveFlight {
   routeId: string
