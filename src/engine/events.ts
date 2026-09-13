@@ -1,6 +1,6 @@
 import type { GameState, OwnedAircraft } from '../types'
 import { findAircraftModel } from '../data/aircraft'
-import { computeValuation } from './stockMarket'
+import { computeValuation, fleetValue } from './stockMarket'
 import { clamp, realFlightMs } from './economy'
 
 /** Random events fire rarely (hours apart) and resolve almost immediately — a short shock or bonus, not a lasting condition. */
@@ -39,21 +39,32 @@ function valuationShare(state: GameState, minPct: number, maxPct: number, floor:
   return clamp(v * pct, floor, cap)
 }
 
+/** A random slice of fleet value — unlike valuationShare, ignores cash on hand, so a fresh
+ *  company sitting on its starting capital (with a tiny fleet so far) isn't taxed as if that
+ *  unspent cash were operational scale. Used for costs that should scale with what you actually
+ *  fly, not what's in the bank. */
+function fleetShare(state: GameState, minPct: number, maxPct: number, floor: number, cap: number): number {
+  const v = Math.max(0, fleetValue(state))
+  const pct = minPct + Math.random() * (maxPct - minPct)
+  return clamp(v * pct, floor, cap)
+}
+
 /** Rolls one random event. Returns null only if nothing could apply (shouldn't happen in practice). */
 export function rollRandomEvent(state: GameState, now: number): RandomEventOutcome | null {
   const idleFleet = state.fleet.filter((a) => a.status === 'idle')
 
   const pool: EventKind[] = ['fuel_spike', 'strike_delay', 'incident', 'demand_boom', 'good_pr', 'route_subsidy']
   if (idleFleet.length > 0) pool.push('aog', 'weather')
-  // Low staff morale makes a strike more likely to be the one that fires — up to +5 extra
-  // entries at 0 morale, none at 100, so managing morale actually lowers the odds.
-  const strikeWeight = Math.round((100 - state.staffMorale) / 20)
+  // Low staff morale makes a strike more likely to be the one that fires — none at the starting
+  // 70 morale or above (a new company shouldn't already be strike-prone), up to +5 extra entries
+  // as it drops toward 0, so managing morale actually lowers the odds.
+  const strikeWeight = Math.max(0, Math.round((70 - state.staffMorale) / 15))
   for (let i = 0; i < strikeWeight; i++) pool.push('strike_delay')
   const kind = pool[Math.floor(Math.random() * pool.length)]
 
   switch (kind) {
     case 'fuel_spike': {
-      const cost = valuationShare(state, 0.003, 0.01, 5_000, 3_000_000)
+      const cost = fleetShare(state, 0.003, 0.01, 5_000, 3_000_000)
       return {
         label: 'Pico de combustível: abastecimento emergencial saiu mais caro',
         cashDelta: -cost,
@@ -62,7 +73,7 @@ export function rollRandomEvent(state: GameState, now: number): RandomEventOutco
       }
     }
     case 'strike_delay': {
-      const cost = valuationShare(state, 0.003, 0.008, 4_000, 2_000_000)
+      const cost = fleetShare(state, 0.003, 0.008, 4_000, 2_000_000)
       return {
         label: 'Greve pontual gerou custos de compensação a passageiros',
         cashDelta: -cost,
@@ -124,7 +135,7 @@ export function rollRandomEvent(state: GameState, now: number): RandomEventOutco
     case 'weather': {
       const target = idleFleet[Math.floor(Math.random() * idleFleet.length)]
       const model = findAircraftModel(target.modelId)
-      const fee = valuationShare(state, 0.001, 0.003, 1_000, 600_000)
+      const fee = fleetShare(state, 0.001, 0.003, 1_000, 600_000)
       const groundedUntil = now + realFlightMs(WEATHER_DURATION_HOURS)
       const fleet = state.fleet.map((a) =>
         a.id === target.id
