@@ -1,14 +1,13 @@
 import type { ActiveFlight, CO2State, FinanceEvent, FuelState, GameState, OwnedAircraft, Route } from '../types'
 import { findAircraftModel } from '../data/aircraft'
-import { findAirport } from '../data/airports'
+import { findAirport, routeLegsKm } from '../data/airports'
 import type { SeatClass } from '../types'
 import {
   simulateFlight,
+  planFlight,
   clamp,
   managerFee,
   realFlightMs,
-  flightTimeHours,
-  fuelTonnes,
   fixedCostPerHour,
   retunePrice,
   LOAN_DAILY_RATE,
@@ -17,6 +16,7 @@ import {
   REVENUE_TEAM_CUT,
   REVENUE_TUNE_INTERVAL_MS,
   SEAT_CLASSES,
+  STOPOVER_FEE,
 } from './economy'
 import { computeRouteDemand } from './demand'
 import { advanceFuelMarket, drawFuel } from './fuel'
@@ -63,18 +63,19 @@ export function dispatchOutcome(
   const model = findAircraftModel(aircraft.modelId)
   const origin = findAirport(route.originCode)
   const dest = findAirport(route.destCode)
-  if (!model || !origin || !dest) return null
+  const legs = routeLegsKm(route.originCode, route.destCode, route.viaCode)
+  if (!model || !origin || !dest || !legs) return null
 
-  const hours = flightTimeHours(route.distanceKm, model.cruiseSpeedKmh)
-  const tonnes = fuelTonnes(model, route.distanceKm)
-  const drawnFuel = drawFuel(fuel, tonnes)
-  const effectiveFuelPrice = tonnes > 0 ? drawnFuel.cost / tonnes : fuel.price
-  const drawnCO2 = drawCO2(co2, tonnes * CO2_PER_FUEL_TONNE)
+  const plan = planFlight(model, legs.leg1Km, legs.leg2Km)
+  const drawnFuel = drawFuel(fuel, plan.tonnes)
+  const effectiveFuelPrice = plan.tonnes > 0 ? drawnFuel.cost / plan.tonnes : fuel.price
+  const drawnCO2 = drawCO2(co2, plan.tonnes * CO2_PER_FUEL_TONNE)
+  const stopoverFee = route.viaCode ? STOPOVER_FEE[model.category] : 0
 
   const demand = computeRouteDemand(origin, dest, route.distanceKm, now)
   const result = simulateFlight(
     model,
-    route.distanceKm,
+    plan,
     aircraft.seatConfig,
     route.prices,
     demand,
@@ -85,16 +86,17 @@ export function dispatchOutcome(
 
   const fee = aircraft.autoManaged ? managerFee(result.revenue) : 0
   const rmFee = revenueCut * result.revenue
-  const netProfit = result.profit - fee - rmFee - drawnCO2.cost
+  const netProfit = result.profit - fee - rmFee - drawnCO2.cost - stopoverFee
   const id = nextEventId()
   const auto = aircraft.autoManaged ? ` (auto · gerente −${Math.round(fee).toLocaleString('en-US')})` : ''
+  const via = route.viaCode ? `${route.viaCode}→` : ''
 
   return {
     flight: {
       routeId: route.id,
       departedAt: now,
-      arrivesAt: now + realFlightMs(hours),
-      hours,
+      arrivesAt: now + realFlightMs(plan.hours),
+      hours: plan.hours,
       passengers: result.passengers,
       loadFactor: result.loadFactor,
       profit: Math.round(netProfit),
@@ -106,12 +108,12 @@ export function dispatchOutcome(
     ledger: {
       id,
       t: now,
-      label: `Voo ${origin.code}→${dest.code}: ${result.passengers} pax, ${Math.round(result.loadFactor * 100)}% ocupação${auto}`,
+      label: `Voo ${origin.code}→${via}${dest.code}: ${result.passengers} pax, ${Math.round(result.loadFactor * 100)}% ocupação${auto}`,
       amount: Math.round(netProfit),
     },
     landing: {
       id,
-      routeLabel: `${origin.code} → ${dest.code}`,
+      routeLabel: `${origin.code} → ${via}${dest.code}`,
       passengers: result.passengers,
       loadFactor: result.loadFactor,
       profit: Math.round(netProfit),

@@ -1,4 +1,5 @@
 import type { Airport } from '../types'
+import { distanceKm } from '../engine/geo'
 
 export const AIRPORTS: Airport[] = [
   { code: 'GRU', name: 'Guarulhos Intl', city: 'São Paulo', country: 'Brasil', lat: -23.4356, lon: -46.4731, weight: 90 },
@@ -32,4 +33,26 @@ export const AIRPORTS: Airport[] = [
 
 export function findAirport(code: string): Airport | undefined {
   return AIRPORTS.find((a) => a.code === code)
+}
+
+export interface RouteLegs {
+  leg1Km: number
+  leg2Km: number
+  totalKm: number
+}
+
+/** Distances for a route, split into legs when it has a stopover. `leg2Km` is 0 without one. */
+export function routeLegsKm(originCode: string, destCode: string, viaCode?: string): RouteLegs | null {
+  const origin = findAirport(originCode)
+  const dest = findAirport(destCode)
+  if (!origin || !dest) return null
+  if (!viaCode) {
+    const d = distanceKm(origin, dest)
+    return { leg1Km: d, leg2Km: 0, totalKm: d }
+  }
+  const via = findAirport(viaCode)
+  if (!via) return null
+  const leg1Km = distanceKm(origin, via)
+  const leg2Km = distanceKm(via, dest)
+  return { leg1Km, leg2Km, totalKm: leg1Km + leg2Km }
 }

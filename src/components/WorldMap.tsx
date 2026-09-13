@@ -1,14 +1,16 @@
 import { useMemo, useRef, useState, type PointerEvent, type WheelEvent } from 'react'
 import type { GameState, SeatClass } from '../types'
-import { AIRPORTS, findAirport } from '../data/airports'
+import { AIRPORTS, findAirport, routeLegsKm } from '../data/airports'
 import { findAircraftModel } from '../data/aircraft'
 import { distanceKm, interpolateGreatCircle } from '../engine/geo'
 import { computeRouteDemand, seasonalMultiplier } from '../engine/demand'
 import {
   fairPriceForClass,
   flightTimeHours,
-  fuelTonnes,
+  planFlight,
   estimateLoadFactor,
+  STOPOVER_FEE,
+  STOPOVER_GROUND_HOURS,
   SEAT_CLASSES,
 } from '../engine/economy'
 import { useGameStore } from '../store/gameStore'
@@ -160,6 +162,7 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
   const [builderId, setBuilderId] = useState<string>('')
   const [pickOrigin, setPickOrigin] = useState<string | null>(null)
   const [pickDest, setPickDest] = useState<string | null>(null)
+  const [pickVia, setPickVia] = useState<string | null>(null)
   const [prices, setPrices] = useState<Record<SeatClass, number>>({ economy: 0, business: 0, first: 0 })
 
   const hub = state.company.hubCode
@@ -189,6 +192,7 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
     setBuilderId('')
     setPickOrigin(null)
     setPickDest(null)
+    setPickVia(null)
   }
 
   const originAp = pickOrigin ? findAirport(pickOrigin) : undefined
@@ -196,6 +200,15 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
     if (!builderModel || !originAp) return true
     const a = findAirport(code)
     return !!a && distanceKm(originAp, a) <= builderModel.rangeKm
+  }
+  const needsVia = building && !!pickDest && !inRange(pickDest)
+  const viaEligible = (code: string): boolean => {
+    if (!builderModel || !originAp || !pickDest) return false
+    if (code === pickOrigin || code === pickDest) return false
+    const destAp = findAirport(pickDest)
+    const viaAp = findAirport(code)
+    if (!destAp || !viaAp) return false
+    return distanceKm(originAp, viaAp) <= builderModel.rangeKm && distanceKm(viaAp, destAp) <= builderModel.rangeKm
   }
 
   const onAirportClick = (code: string) => {
@@ -206,13 +219,18 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
       return
     }
     if (!pickDest) {
-      if (code === pickOrigin || !inRange(code)) return
+      if (code === pickOrigin) return
       const dst = findAirport(code)!
       const dist = distanceKm(originAp!, dst)
       const init = {} as Record<SeatClass, number>
       for (const cls of SEAT_CLASSES) init[cls] = Math.round(fairPriceForClass(dist, cls))
       setPrices(init)
       setPickDest(code)
+      setPickVia(null)
+      return
+    }
+    if (needsVia && viaEligible(code)) {
+      setPickVia(code)
     }
   }
 
@@ -223,18 +241,57 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
         const route = state.routes.find((r) => r.id === ac.flight!.routeId)
         const origin = route ? findAirport(route.originCode) : undefined
         const dest = route ? findAirport(route.destCode) : undefined
+        const via = route?.viaCode ? findAirport(route.viaCode) : undefined
         if (!route || !origin || !dest) return null
-        const f = Math.min(1, Math.max(0, (now - ac.flight!.departedAt) / (ac.flight!.arrivesAt - ac.flight!.departedAt)))
-        const p = interpolateGreatCircle(origin, dest, f)
-        const ahead = interpolateGreatCircle(origin, dest, Math.min(1, f + 0.02))
+        const model = findAircraftModel(ac.modelId)
+
+        const overall = Math.min(
+          1,
+          Math.max(0, (now - ac.flight!.departedAt) / (ac.flight!.arrivesAt - ac.flight!.departedAt)),
+        )
+
+        let legA = origin
+        let legB = dest
+        let f = overall
+        let arc: string
+
+        if (via && model) {
+          const leg1Hours = flightTimeHours(distanceKm(origin, via), model.cruiseSpeedKmh)
+          const leg2Hours = flightTimeHours(distanceKm(via, dest), model.cruiseSpeedKmh)
+          const elapsedHours = overall * ac.flight!.hours
+          if (elapsedHours <= leg1Hours) {
+            legB = via
+            f = leg1Hours > 0 ? elapsedHours / leg1Hours : 1
+          } else if (elapsedHours <= leg1Hours + STOPOVER_GROUND_HOURS) {
+            legA = via
+            legB = via
+            f = 0
+          } else {
+            legA = via
+            f = leg2Hours > 0 ? (elapsedHours - leg1Hours - STOPOVER_GROUND_HOURS) / leg2Hours : 1
+          }
+          const leg1Arc = Array.from({ length: 17 }, (_, i) => {
+            const g = interpolateGreatCircle(origin, via, i / 16)
+            return project(g.lat, g.lon).join(',')
+          })
+          const leg2Arc = Array.from({ length: 17 }, (_, i) => {
+            const g = interpolateGreatCircle(via, dest, i / 16)
+            return project(g.lat, g.lon).join(',')
+          })
+          arc = [...leg1Arc, ...leg2Arc].join(' ')
+        } else {
+          arc = Array.from({ length: 33 }, (_, i) => {
+            const g = interpolateGreatCircle(origin, dest, i / 32)
+            return project(g.lat, g.lon).join(',')
+          }).join(' ')
+        }
+
+        const p = interpolateGreatCircle(legA, legB, f)
+        const ahead = interpolateGreatCircle(legA, legB, Math.min(1, f + 0.02))
         const [x, y] = project(p.lat, p.lon)
         const [ax, ay] = project(ahead.lat, ahead.lon)
         const heading = (Math.atan2(ay - y, ax - x) * 180) / Math.PI
-        const arc = Array.from({ length: 33 }, (_, i) => {
-          const g = interpolateGreatCircle(origin, dest, i / 32)
-          return project(g.lat, g.lon).join(',')
-        }).join(' ')
-        return { ac, route, origin, dest, f, x, y, heading, arc, model: findAircraftModel(ac.modelId) }
+        return { ac, route, origin, dest, via, f: overall, x, y, heading, arc, model }
       })
       .filter((v): v is NonNullable<typeof v> => v !== null)
   }, [state.fleet, state.routes, now])
@@ -243,24 +300,53 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
 
   // Builder preview arc + numbers.
   const preview = useMemo(() => {
-    if (!building || !originAp || !pickDest || !builderModel) return null
+    if (!building || !originAp || !pickDest || !builderModel || (needsVia && !pickVia)) return null
     const dst = findAirport(pickDest)!
-    const dist = Math.round(distanceKm(originAp, dst))
-    const arc = Array.from({ length: 33 }, (_, i) => {
-      const g = interpolateGreatCircle(originAp, dst, i / 32)
-      return project(g.lat, g.lon).join(',')
-    }).join(' ')
+    const via = pickVia ? findAirport(pickVia) : undefined
+    const legs = routeLegsKm(pickOrigin!, pickDest, pickVia ?? undefined)
+    if (!legs) return null
+    const plan = planFlight(builderModel, legs.leg1Km, legs.leg2Km)
+    const dist = Math.round(plan.distanceKm)
+
+    const arc = via
+      ? [
+          ...Array.from({ length: 17 }, (_, i) => {
+            const g = interpolateGreatCircle(originAp, via, i / 16)
+            return project(g.lat, g.lon).join(',')
+          }),
+          ...Array.from({ length: 17 }, (_, i) => {
+            const g = interpolateGreatCircle(via, dst, i / 16)
+            return project(g.lat, g.lon).join(',')
+          }),
+        ].join(' ')
+      : Array.from({ length: 33 }, (_, i) => {
+          const g = interpolateGreatCircle(originAp, dst, i / 32)
+          return project(g.lat, g.lon).join(',')
+        }).join(' ')
+
     const demand = computeRouteDemand(originAp, dst, dist, now)
-    const hours = flightTimeHours(dist, builderModel.cruiseSpeedKmh)
     const activeClasses = SEAT_CLASSES.filter((c) => (builderAircraft?.seatConfig[c] ?? 0) > 0)
     const revenue = activeClasses.reduce((sum, c) => {
       const load = estimateLoadFactor(dist, c, prices[c], state.company.reputation)
       const pax = Math.min(builderAircraft!.seatConfig[c], Math.round(demand[c] * load))
       return sum + pax * prices[c]
     }, 0)
-    const cost = fuelTonnes(builderModel, dist) * state.fuel.price + builderModel.maintenancePerHour * hours
-    return { dst, dist, arc, demand, hours, activeClasses, revenue, cost, profit: revenue - cost }
-  }, [building, originAp, pickDest, builderModel, builderAircraft, prices, state.company.reputation, state.fuel.price])
+    const stopoverFee = pickVia ? STOPOVER_FEE[builderModel.category] : 0
+    const cost = plan.tonnes * state.fuel.price + builderModel.maintenancePerHour * plan.hours + stopoverFee
+    return { dst, dist, arc, demand, hours: plan.hours, activeClasses, revenue, cost, profit: revenue - cost }
+  }, [
+    building,
+    originAp,
+    pickOrigin,
+    pickDest,
+    pickVia,
+    needsVia,
+    builderModel,
+    builderAircraft,
+    prices,
+    state.company.reputation,
+    state.fuel.price,
+  ])
 
   return (
     <div>
@@ -433,11 +519,14 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
             const isHub = a.code === hub
             const isOrigin = building && pickOrigin === a.code
             const isDest = building && pickDest === a.code
-            const disabled = building && !!pickOrigin && !pickDest && a.code !== pickOrigin && !inRange(a.code)
+            const isVia = building && pickVia === a.code
+            const disabled =
+              building && !!pickDest && needsVia && a.code !== pickOrigin && a.code !== pickDest && !viaEligible(a.code)
             let fill = isHub ? '#ffd24a' : '#eaf1fb'
             if (isOrigin) fill = '#7fe0a8'
             if (isDest) fill = '#4cc6fb'
-            const big = isHub || isOrigin || isDest
+            if (isVia) fill = '#c78cf0'
+            const big = isHub || isOrigin || isDest || isVia
             return (
               <g
                 key={a.code}
@@ -458,13 +547,13 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
                   />
                   <circle cx={0} cy={-11.5} r={2.6} fill="#0a1424" />
                 </g>
-                {(isOrigin || isDest) && (
+                {(isOrigin || isDest || isVia) && (
                   <circle cx={0} cy={-11.5} r={9} fill="none" stroke={fill} strokeWidth="1.5" />
                 )}
                 {isHub && !isOrigin && !isDest && (
                   <circle cx={0} cy={-11.5} r={8.5} fill="none" stroke="#ffd24a" strokeWidth="1" opacity={on ? 0.8 : 0.2} />
                 )}
-                {(on && q) || hoverAirport === a.code || isOrigin || isDest ? (
+                {(on && q) || hoverAirport === a.code || isOrigin || isDest || isVia ? (
                   <text x={9} y={-9} fontSize="8.5" fill="#fff" stroke="#0a1424" strokeWidth="2.4" paintOrder="stroke">
                     {a.code}
                   </text>
@@ -558,7 +647,8 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
               </button>
             </div>
             <div style={{ color: 'var(--text-dim)', marginTop: 4 }}>
-              {selected.origin.code} → {selected.dest.code} · {selected.route.distanceKm.toLocaleString('pt-BR')} km
+              {selected.origin.code} → {selected.via ? `${selected.via.code} → ` : ''}
+              {selected.dest.code} · {selected.route.distanceKm.toLocaleString('pt-BR')} km
             </div>
             <div style={{ marginTop: 6 }}>
               <div style={{ height: 6, borderRadius: 999, background: 'var(--border)', overflow: 'hidden' }}>
@@ -618,6 +708,26 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
         )}
       </div>
 
+      {building && needsVia && !pickVia && (
+        <div
+          style={{
+            marginTop: 12,
+            border: '1px solid var(--border-soft)',
+            borderRadius: 'var(--radius-sm)',
+            background: 'var(--panel)',
+            padding: 14,
+            color: 'var(--text-dim)',
+            fontSize: 13,
+          }}
+        >
+          <strong style={{ color: 'var(--text-h)' }}>
+            {pickOrigin} → {pickDest}
+          </strong>{' '}
+          fica fora do alcance direto da aeronave — clique em outro aeroporto no mapa para usá-lo como escala.
+          Os que não servem (perna longa demais de um dos lados) ficam apagados.
+        </div>
+      )}
+
       {preview && builderAircraft && (
         <div
           style={{
@@ -633,9 +743,11 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
         >
           <div className="stat-chip">
             <strong>
-              {pickOrigin} → {pickDest}
+              {pickOrigin} → {pickVia ? `${pickVia} → ` : ''}
+              {pickDest}
             </strong>{' '}
             · {preview.dist.toLocaleString('pt-BR')} km · {formatDuration(preview.hours)} de voo
+            {pickVia ? ' (com escala)' : ''}
           </div>
           <div className="stat-chip">
             Demanda diária:{' '}
@@ -683,13 +795,20 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
             <button
               className="primary"
               onClick={() => {
-                createRoute(pickOrigin!, pickDest!, builderAircraft.id, prices)
+                createRoute(pickOrigin!, pickDest!, builderAircraft.id, prices, pickVia ?? undefined)
                 resetBuilder()
               }}
             >
               Criar rota
             </button>
-            <button onClick={() => setPickDest(null)}>Trocar destino</button>
+            <button
+              onClick={() => {
+                setPickDest(null)
+                setPickVia(null)
+              }}
+            >
+              Trocar destino
+            </button>
           </div>
         </div>
       )}

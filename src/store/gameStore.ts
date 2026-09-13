@@ -2,10 +2,9 @@ import { create } from 'zustand'
 import type { GameState, OwnedAircraft, Route, SeatClass, SeatConfig } from '../types'
 import type { TutorialStep } from '../types'
 import { findAircraftModel } from '../data/aircraft'
-import { findAirport } from '../data/airports'
-import { distanceKm } from '../engine/geo'
+import { findAirport, routeLegsKm } from '../data/airports'
 import {
-  flightTimeHours,
+  planFlight,
   realFlightMs,
   seatUnitsUsed,
   cabinUpfitCost,
@@ -89,7 +88,13 @@ interface GameStore {
   createCompany: (name: string, hubCode: string) => void
   buyAircraft: (modelId: string, seatConfig?: SeatConfig) => void
   sellAircraft: (aircraftId: string) => void
-  createRoute: (originCode: string, destCode: string, aircraftId: string, prices: Record<SeatClass, number>) => void
+  createRoute: (
+    originCode: string,
+    destCode: string,
+    aircraftId: string,
+    prices: Record<SeatClass, number>,
+    viaCode?: string,
+  ) => void
   updateRoutePrices: (routeId: string, prices: Record<SeatClass, number>) => void
   deleteRoute: (routeId: string) => void
   dispatchFlight: (routeId: string) => void
@@ -214,25 +219,28 @@ export const useGameStore = create<GameStore>((set, get) => ({
     persist(next)
   },
 
-  createRoute: (originCode, destCode, aircraftId, prices) => {
+  createRoute: (originCode, destCode, aircraftId, prices, viaCode) => {
     const state = get().state
-    const origin = findAirport(originCode)
-    const dest = findAirport(destCode)
     const aircraft = state?.fleet.find((a) => a.id === aircraftId)
-    if (!state || !origin || !dest || !aircraft || originCode === destCode) return
+    if (!state || !aircraft || originCode === destCode) return
+    if (viaCode && (viaCode === originCode || viaCode === destCode)) return
 
+    const legs = routeLegsKm(originCode, destCode, viaCode)
+    if (!legs) return
     const model = findAircraftModel(aircraft.modelId)
-    const dist = Math.round(distanceKm(origin, dest))
-    if (model && dist > model.rangeKm) return
+    if (model && (legs.leg1Km > model.rangeKm || legs.leg2Km > model.rangeKm)) return
+
+    const plan = model ? planFlight(model, legs.leg1Km, legs.leg2Km) : null
 
     const route: Route = {
       id: `route-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       originCode,
       destCode,
+      viaCode,
       aircraftId,
       prices,
-      distanceKm: dist,
-      flightTimeHours: model ? flightTimeHours(dist, model.cruiseSpeedKmh) : 0,
+      distanceKm: Math.round(plan?.distanceKm ?? legs.totalKm),
+      flightTimeHours: plan?.hours ?? 0,
     }
 
     const next: GameState = {

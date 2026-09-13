@@ -135,6 +135,44 @@ export function flightTimeHours(distanceKm: number, cruiseSpeedKmh: number): num
   return distanceKm / cruiseSpeedKmh + TAXI_OVERHEAD_HOURS
 }
 
+/** Stopovers: an extra landing and takeoff, priced like real airport handling fees — bigger jets pay more. */
+export const STOPOVER_FEE: Record<AircraftCategory, number> = {
+  regional: 1_500,
+  narrowbody: 4_000,
+  widebody: 9_000,
+}
+
+/** Ground time at the stopover — deplaning, refuel, reboarding. */
+export const STOPOVER_GROUND_HOURS = 1
+
+export interface FlightPlan {
+  /** Total distance actually flown — both legs, when there's a stopover. */
+  distanceKm: number
+  /** Total elapsed hours, including stopover ground time. */
+  hours: number
+  /** Total fuel burned, in tonnes — each leg pays its own takeoff/climb overhead. */
+  tonnes: number
+}
+
+/** Plans a flight from leg distances. Pass `leg2Km = 0` for a direct route with no stopover. */
+export function planFlight(model: AircraftModel, leg1Km: number, leg2Km: number): FlightPlan {
+  if (leg2Km <= 0) {
+    return {
+      distanceKm: leg1Km,
+      hours: flightTimeHours(leg1Km, model.cruiseSpeedKmh),
+      tonnes: fuelTonnes(model, leg1Km),
+    }
+  }
+  return {
+    distanceKm: leg1Km + leg2Km,
+    hours:
+      flightTimeHours(leg1Km, model.cruiseSpeedKmh) +
+      flightTimeHours(leg2Km, model.cruiseSpeedKmh) +
+      STOPOVER_GROUND_HOURS,
+    tonnes: fuelTonnes(model, leg1Km) + fuelTonnes(model, leg2Km),
+  }
+}
+
 /** Extra "distance" charged for the fuel-heavy taxi, takeoff and climb of every flight. */
 export const TAKEOFF_KM_EQUIV = 250
 
@@ -189,7 +227,7 @@ export interface FlightResult {
 
 export function simulateFlight(
   model: AircraftModel,
-  distanceKm: number,
+  plan: FlightPlan,
   seatConfig: SeatConfig,
   prices: Record<SeatClass, number>,
   demand: Record<SeatClass, number>,
@@ -197,7 +235,7 @@ export function simulateFlight(
   fuelPrice: number,
   maintenanceMultiplier = 1,
 ): FlightResult {
-  const hours = flightTimeHours(distanceKm, model.cruiseSpeedKmh)
+  const { distanceKm, hours, tonnes } = plan
   const reputationFactor = 0.6 + (reputation / 100) * 0.4
   const noise = 0.92 + Math.random() * 0.16
 
@@ -228,7 +266,7 @@ export function simulateFlight(
 
   const seatsTotal = totalSeatCount(seatConfig)
   const overallLoadFactor = seatsTotal > 0 ? totalPassengers / seatsTotal : 0
-  const fuelCost = fuelTonnes(model, distanceKm) * fuelPrice
+  const fuelCost = tonnes * fuelPrice
   const maintenanceCost = model.maintenancePerHour * hours * maintenanceMultiplier
   const profit = totalRevenue - fuelCost - maintenanceCost
   const reputationDelta = (overallLoadFactor - 0.5) * 0.6

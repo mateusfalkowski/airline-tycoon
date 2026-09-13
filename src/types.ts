@@ -67,9 +67,14 @@ export interface Route {
   id: string
   originCode: string
   destCode: string
+  /** Optional stopover airport — lets a route reach beyond the aircraft's direct range,
+   *  as long as each leg (origin→via, via→dest) is within range on its own. */
+  viaCode?: string
   aircraftId: string
   prices: Record<SeatClass, number>
+  /** Total distance actually flown — both legs, when there's a stopover. */
   distanceKm: number
+  /** Total elapsed hours — both legs plus stopover ground time, when there's a stopover. */
   flightTimeHours: number
 }
 

@@ -1,18 +1,18 @@
 import { useState } from 'react'
 import type { AircraftModel, GameState, Route, SeatClass, TutorialStep } from '../types'
-import { AIRPORTS, findAirport } from '../data/airports'
+import { AIRPORTS, findAirport, routeLegsKm } from '../data/airports'
 import { findAircraftModel } from '../data/aircraft'
 import { distanceKm } from '../engine/geo'
 import {
   fairPriceForClass,
-  flightTimeHours,
-  fuelTonnes,
+  planFlight,
   fixedCostPerHour,
   estimateLoadFactor,
   managerCap,
   MANAGER_HIRE_FEE,
   MANAGER_UNLOCK_FLIGHTS,
   CHECK_INTERVAL_HOURS,
+  STOPOVER_FEE,
   SEAT_CLASSES,
 } from '../engine/economy'
 import { computeRouteDemand } from '../engine/demand'
@@ -145,9 +145,11 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
                   <div className="stat-chip">
                     Rota{' '}
                     <strong>
-                      {route.originCode} → {route.destCode}
+                      {route.originCode} → {route.viaCode ? `${route.viaCode} → ` : ''}
+                      {route.destCode}
                     </strong>{' '}
                     · {route.distanceKm.toLocaleString('pt-BR')} km · {formatDuration(route.flightTimeHours)} de voo
+                    {route.viaCode ? ' (com escala)' : ''}
                   </div>
                   {editingPrices?.routeId === route.id ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -300,8 +302,8 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
                   reputation={state.company.reputation}
                   fuelPrice={state.fuel.price}
                   onCancel={() => setEditingAircraft(null)}
-                  onCreate={(origin, dest, prices) => {
-                    createRoute(origin, dest, aircraft.id, prices)
+                  onCreate={(origin, dest, prices, viaCode) => {
+                    createRoute(origin, dest, aircraft.id, prices, viaCode)
                     setEditingAircraft(null)
                   }}
                 />
@@ -337,23 +339,40 @@ function RouteForm({
   hub: string
   reputation: number
   fuelPrice: number
-  onCreate: (origin: string, dest: string, prices: Record<SeatClass, number>) => void
+  onCreate: (origin: string, dest: string, prices: Record<SeatClass, number>, viaCode?: string) => void
   onCancel: () => void
 }) {
   const [origin, setOrigin] = useState(hub)
   const [dest, setDest] = useState(AIRPORTS.find((a) => a.code !== hub)!.code)
+  const [via, setVia] = useState<string | null>(null)
   const activeClasses = SEAT_CLASSES.filter((cls) => seatConfig[cls] > 0)
 
   const originAirport = findAirport(origin)
   const destAirport = findAirport(dest)
-  const dist = originAirport && destAirport ? distanceKm(originAirport, destAirport) : 0
+  const directDist = originAirport && destAirport ? distanceKm(originAirport, destAirport) : 0
+  const directOutOfRange = directDist > model.rangeKm
+
+  const viaCandidates =
+    directOutOfRange && originAirport && destAirport
+      ? AIRPORTS.filter(
+          (a) =>
+            a.code !== origin &&
+            a.code !== dest &&
+            distanceKm(originAirport, a) <= model.rangeKm &&
+            distanceKm(a, destAirport) <= model.rangeKm,
+        )
+      : []
+  const effectiveVia = directOutOfRange && via && viaCandidates.some((a) => a.code === via) ? via : undefined
+
+  const legs = originAirport && destAirport ? routeLegsKm(origin, dest, effectiveVia) : null
+  const dist = legs?.totalKm ?? directDist
   const demand = originAirport && destAirport ? computeRouteDemand(originAirport, destAirport, dist, Date.now()) : null
 
   const inRange = (code: string): boolean => {
     const a = findAirport(code)
     return !!originAirport && !!a && distanceKm(originAirport, a) <= model.rangeKm
   }
-  const outOfRange = dist > model.rangeKm
+  const outOfRange = directOutOfRange && !effectiveVia
 
   const [prices, setPrices] = useState<Record<SeatClass, number>>(() => {
     const initial = {} as Record<SeatClass, number>
@@ -361,8 +380,10 @@ function RouteForm({
     return initial
   })
 
-  const hours = flightTimeHours(dist, model.cruiseSpeedKmh)
-  const cost = fuelTonnes(model, dist) * fuelPrice + model.maintenancePerHour * hours
+  const plan = legs ? planFlight(model, legs.leg1Km, legs.leg2Km) : null
+  const hours = plan?.hours ?? 0
+  const stopoverFee = effectiveVia ? STOPOVER_FEE[model.category] : 0
+  const cost = (plan?.tonnes ?? 0) * fuelPrice + model.maintenancePerHour * hours + stopoverFee
   const revenue = demand
     ? activeClasses.reduce((sum, cls) => {
         const load = estimateLoadFactor(dist, cls, prices[cls], reputation)
@@ -376,7 +397,13 @@ function RouteForm({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <Field label="Origem">
-          <select value={origin} onChange={(e) => setOrigin(e.target.value)}>
+          <select
+            value={origin}
+            onChange={(e) => {
+              setOrigin(e.target.value)
+              setVia(null)
+            }}
+          >
             {AIRPORTS.map((a) => (
               <option key={a.code} value={a.code}>
                 {a.code} — {a.city}
@@ -386,19 +413,44 @@ function RouteForm({
         </Field>
         <span style={{ paddingBottom: 7, color: 'var(--text-dim)' }}>→</span>
         <Field label="Destino">
-          <select value={dest} onChange={(e) => setDest(e.target.value)}>
+          <select
+            value={dest}
+            onChange={(e) => {
+              setDest(e.target.value)
+              setVia(null)
+            }}
+          >
             {AIRPORTS.filter((a) => a.code !== origin).map((a) => (
-              <option key={a.code} value={a.code} disabled={!inRange(a.code)}>
+              <option key={a.code} value={a.code}>
                 {a.code} — {a.city}
-                {inRange(a.code) ? '' : ' (fora de alcance)'}
+                {inRange(a.code) ? '' : ' (precisa de escala)'}
               </option>
             ))}
           </select>
         </Field>
       </div>
 
+      {directOutOfRange && (
+        <Field label="Escala — destino fora do alcance direto">
+          <select value={via ?? ''} onChange={(e) => setVia(e.target.value || null)}>
+            <option value="">Selecione uma escala…</option>
+            {viaCandidates.map((a) => (
+              <option key={a.code} value={a.code}>
+                {a.code} — {a.city}
+              </option>
+            ))}
+          </select>
+          {viaCandidates.length === 0 && (
+            <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 4 }}>
+              Nenhum aeroporto serve de escala — nenhum fica a uma perna de alcance dos dois lados.
+            </div>
+          )}
+        </Field>
+      )}
+
       <div className="stat-chip" style={{ color: outOfRange ? 'var(--red)' : 'var(--text-dim)' }}>
-        {Math.round(dist).toLocaleString('pt-BR')} km · alcance da aeronave {model.rangeKm.toLocaleString('pt-BR')} km
+        {Math.round(dist).toLocaleString('pt-BR')} km{effectiveVia ? ` (via ${effectiveVia})` : ''} · alcance da
+        aeronave {model.rangeKm.toLocaleString('pt-BR')} km
         {outOfRange ? ' — rota longa demais' : ''}
       </div>
 
@@ -449,7 +501,7 @@ function RouteForm({
         <button
           className="primary"
           disabled={origin === dest || outOfRange}
-          onClick={() => onCreate(origin, dest, prices)}
+          onClick={() => onCreate(origin, dest, prices, effectiveVia)}
         >
           Criar rota
         </button>
