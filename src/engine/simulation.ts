@@ -1,4 +1,13 @@
-import type { ActiveFlight, CO2State, FinanceEvent, FuelState, GameState, OwnedAircraft, Route } from '../types'
+import type {
+  ActiveFlight,
+  CO2State,
+  FinanceEvent,
+  FuelState,
+  GameState,
+  OwnedAircraft,
+  Route,
+  TrainingLevels,
+} from '../types'
 import { findAircraftModel } from '../data/aircraft'
 import { findAirport, routeLegsKm } from '../data/airports'
 import type { SeatClass } from '../types'
@@ -17,6 +26,8 @@ import {
   REVENUE_TUNE_INTERVAL_MS,
   SEAT_CLASSES,
   STOPOVER_FEE,
+  trainingMultiplier,
+  CREW_BONUS_PER_LEVEL,
 } from './economy'
 import { computeRouteDemand } from './demand'
 import { advanceFuelMarket, drawFuel } from './fuel'
@@ -59,6 +70,7 @@ export function dispatchOutcome(
   reputation: number,
   now: number,
   revenueCut = 0,
+  training?: TrainingLevels,
 ): DispatchOutcome | null {
   const model = findAircraftModel(aircraft.modelId)
   const origin = findAirport(route.originCode)
@@ -66,10 +78,14 @@ export function dispatchOutcome(
   const legs = routeLegsKm(route.originCode, route.destCode, route.viaCode)
   if (!model || !origin || !dest || !legs) return null
 
-  const plan = planFlight(model, legs.leg1Km, legs.leg2Km)
+  const fuelMult = trainingMultiplier(training?.fuel ?? 0)
+  const emissionsMult = trainingMultiplier(training?.emissions ?? 0)
+  const crewBonus = (training?.crew ?? 0) * CREW_BONUS_PER_LEVEL
+
+  const plan = planFlight(model, legs.leg1Km, legs.leg2Km, fuelMult)
   const drawnFuel = drawFuel(fuel, plan.tonnes)
   const effectiveFuelPrice = plan.tonnes > 0 ? drawnFuel.cost / plan.tonnes : fuel.price
-  const drawnCO2 = drawCO2(co2, plan.tonnes * CO2_PER_FUEL_TONNE)
+  const drawnCO2 = drawCO2(co2, plan.tonnes * CO2_PER_FUEL_TONNE * emissionsMult)
   const stopoverFee = route.viaCode ? STOPOVER_FEE[model.category] : 0
 
   const demand = computeRouteDemand(origin, dest, route.distanceKm, now)
@@ -82,6 +98,7 @@ export function dispatchOutcome(
     reputation,
     effectiveFuelPrice,
     1 + aircraft.wear,
+    crewBonus,
   )
 
   const fee = aircraft.autoManaged ? managerFee(result.revenue) : 0
@@ -158,11 +175,13 @@ function advanceFleetTo(
   flightsCompleted: number,
   revenueCut: number,
   now: number,
+  training: TrainingLevels,
 ): FleetAdvanceResult {
   let working = fleet
   const landings: FlightLanding[] = []
   let autoFlights = 0
   let autoProfit = 0
+  const wearMult = trainingMultiplier(training.maintenance)
 
   for (let guard = 0; guard < MAX_CATCHUP_EVENTS; guard++) {
     let pickIdx = -1
@@ -195,14 +214,16 @@ function advanceFleetTo(
       ...aircraft,
       status: 'idle' as const,
       flight: undefined,
-      wear: clamp(aircraft.wear + h * WEAR_PER_HOUR, 0, 1),
+      wear: clamp(aircraft.wear + h * WEAR_PER_HOUR * wearMult, 0, 1),
       hoursSinceCheck: aircraft.hoursSinceCheck + h,
       totalHours: aircraft.totalHours + h,
     }
 
     if (updated.autoManaged && updated.hoursSinceCheck < CHECK_INTERVAL_HOURS) {
       const route = routes.find((r) => r.aircraftId === updated.id)
-      const outcome = route ? dispatchOutcome(updated, route, fuel, co2, reputation, pickTime, revenueCut) : null
+      const outcome = route
+        ? dispatchOutcome(updated, route, fuel, co2, reputation, pickTime, revenueCut, training)
+        : null
       if (outcome) {
         fuel = outcome.fuel
         co2 = outcome.co2
@@ -240,6 +261,7 @@ export function tick(state: GameState): TickResult {
   let co2 = advanceCO2Market(state.co2, now)
   const ledger: FinanceEvent[] = []
   const landings: FlightLanding[] = []
+  const wearMult = trainingMultiplier(state.training.maintenance)
 
   // Fixed fleet upkeep — charged continuously, logged hourly. Capped so a very stale save can't wipe you.
   const fixedPerHour = state.fleet.reduce((sum, ac) => {
@@ -336,7 +358,7 @@ export function tick(state: GameState): TickResult {
       ...aircraft,
       status: 'idle' as const,
       flight: undefined,
-      wear: clamp(aircraft.wear + h * WEAR_PER_HOUR, 0, 1),
+      wear: clamp(aircraft.wear + h * WEAR_PER_HOUR * wearMult, 0, 1),
       hoursSinceCheck: aircraft.hoursSinceCheck + h,
       totalHours: aircraft.totalHours + h,
     }
@@ -348,7 +370,7 @@ export function tick(state: GameState): TickResult {
     if (aircraft.hoursSinceCheck >= CHECK_INTERVAL_HOURS) return aircraft
     const route = routes.find((r) => r.aircraftId === aircraft.id)
     if (!route) return aircraft
-    const outcome = dispatchOutcome(aircraft, route, fuel, co2, reputation, now, revenueCut)
+    const outcome = dispatchOutcome(aircraft, route, fuel, co2, reputation, now, revenueCut, state.training)
     if (!outcome) return aircraft
     fuel = outcome.fuel
     co2 = outcome.co2
@@ -410,6 +432,7 @@ export function catchUp(state: GameState): TickResult {
     state.flightsCompleted,
     revenueCut,
     now,
+    state.training,
   )
 
   const withAdvance: GameState = {

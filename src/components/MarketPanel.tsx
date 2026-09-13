@@ -8,6 +8,7 @@ import {
   seatUnitsUsed,
   totalSeatCount,
   cabinUpfitCost,
+  recommendedCabin,
   resaleValue,
 } from '../engine/economy'
 import type { AircraftModel, GameState, SeatClass, SeatConfig, TutorialStep } from '../types'
@@ -151,6 +152,15 @@ export function MarketPanel({ state, tutorial }: { state: GameState; tutorial?: 
               >
                 Comprar (só econômica)
               </button>
+              {(() => {
+                const recommended = recommendedCabin(m)
+                const recommendedPrice = m.price + cabinUpfitCost(recommended)
+                return (
+                  <button disabled={state.cash < recommendedPrice} onClick={() => buyAircraft(m.id, recommended)}>
+                    Comprar (cabine recomendada) · {formatMoney(recommendedPrice)}
+                  </button>
+                )
+              })()}
               <button onClick={() => setConfiguringId(configuringId === m.id ? null : m.id)}>
                 Configurar cabine
               </button>
@@ -231,6 +241,10 @@ function CabinConfigurator({
         borderRadius: 'var(--radius-sm)',
       }}
     >
+      <button style={{ fontSize: 12, alignSelf: 'flex-start' }} onClick={() => setConfig(recommendedCabin(model))}>
+        Usar cabine recomendada
+      </button>
+
       {SEAT_CLASSES.map((cls) => (
         <Field key={cls} label={`${CLASS_LABEL[cls]} — ${config[cls]} assentos`}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

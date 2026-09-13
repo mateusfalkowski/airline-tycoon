@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { GameState, OwnedAircraft, Route, SeatClass, SeatConfig } from '../types'
+import type { GameState, OwnedAircraft, Route, SeatClass, SeatConfig, TrainingCategory } from '../types'
 import type { TutorialStep } from '../types'
 import { findAircraftModel } from '../data/aircraft'
 import { findAirport, routeLegsKm } from '../data/airports'
@@ -26,6 +26,9 @@ import {
   STAFF_BONUS_COOLDOWN_MS,
   staffBonusCost,
   staffBonusGain,
+  TRAINING_MAX_LEVEL,
+  trainingCost,
+  TRAINING_LABEL,
 } from '../engine/economy'
 import { createInitialFuel, buyFuel, nextDepotUpgrade } from '../engine/fuel'
 import { createInitialCO2, buyCO2 } from '../engine/co2'
@@ -78,6 +81,7 @@ function migrateState(saved: GameState): GameState {
     achievedMilestones: saved.achievedMilestones ?? [],
     nextEventAt: saved.nextEventAt ?? rollNextEventAt(Date.now()),
     staffMorale: saved.staffMorale ?? 70,
+    training: saved.training ?? { fuel: 0, maintenance: 0, emissions: 0, crew: 0 },
   }
 }
 
@@ -104,6 +108,7 @@ interface GameStore {
   upgradeDepot: () => void
   runCampaign: (campaignId: string) => void
   giveStaffBonus: () => void
+  investTraining: (category: TrainingCategory) => void
   toggleRevenueTeam: () => void
   takeLoan: (amount: number) => void
   repayLoan: (amount: number) => void
@@ -157,6 +162,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       achievedMilestones: [],
       nextEventAt: rollNextEventAt(Date.now()),
       staffMorale: 70,
+      training: { fuel: 0, maintenance: 0, emissions: 0, crew: 0 },
     }
     set({ state: newState })
     persist(newState)
@@ -297,6 +303,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       state.company.reputation,
       now,
       state.revenueTeam ? REVENUE_TEAM_CUT : 0,
+      state.training,
     )
     if (!outcome) return
 
@@ -534,6 +541,32 @@ export const useGameStore = create<GameStore>((set, get) => ({
       staffMorale: Math.min(100, state.staffMorale + gain),
       ledger: [
         { id: `evt-staff-${now}`, t: now, label: `Bônus para a equipe (+${gain} moral)`, amount: -cost },
+        ...state.ledger,
+      ].slice(0, 100),
+    }
+    set({ state: next })
+    persist(next)
+  },
+
+  investTraining: (category) => {
+    const state = get().state
+    if (!state) return
+    const level = state.training[category]
+    if (level >= TRAINING_MAX_LEVEL) return
+    const cost = trainingCost(level)
+    if (state.cash < cost) return
+    const now = Date.now()
+    const next: GameState = {
+      ...state,
+      cash: state.cash - cost,
+      training: { ...state.training, [category]: level + 1 },
+      ledger: [
+        {
+          id: `evt-training-${now}`,
+          t: now,
+          label: `Treinamento: ${TRAINING_LABEL[category]} (nível ${level + 1})`,
+          amount: -cost,
+        },
         ...state.ledger,
       ].slice(0, 100),
     }

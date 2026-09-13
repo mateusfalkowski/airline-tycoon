@@ -12,12 +12,33 @@ import {
   maxLoan,
   staffBonusCost,
   staffBonusGain,
+  TRAINING_CATEGORIES,
+  TRAINING_LABEL,
+  TRAINING_MAX_LEVEL,
+  TRAINING_EFFECT_PER_LEVEL,
+  CREW_BONUS_PER_LEVEL,
+  trainingCost,
 } from '../engine/economy'
+import type { TrainingCategory } from '../types'
 import { MILESTONES } from '../engine/milestones'
+
+const TRAINING_DESCRIPTION: Record<TrainingCategory, string> = {
+  fuel: 'Reduz o combustível queimado por voo.',
+  maintenance: 'Reduz o desgaste acumulado por hora voada.',
+  emissions: 'Reduz o CO2 emitido por tonelada de combustível.',
+  crew: 'Aumenta a ocupação média dos voos.',
+}
+
+function trainingEffectLabel(category: TrainingCategory, level: number): string {
+  if (level === 0) return 'Nenhum efeito ainda'
+  if (category === 'crew') return `+${(level * CREW_BONUS_PER_LEVEL * 100).toFixed(1)}pp de ocupação`
+  return `-${Math.round(level * TRAINING_EFFECT_PER_LEVEL * 100)}% agora`
+}
 
 export function CompanyPanel({ state, now }: { state: GameState; now: number }) {
   const runCampaign = useGameStore((s) => s.runCampaign)
   const giveStaffBonus = useGameStore((s) => s.giveStaffBonus)
+  const investTraining = useGameStore((s) => s.investTraining)
   const toggleRevenueTeam = useGameStore((s) => s.toggleRevenueTeam)
   const takeLoan = useGameStore((s) => s.takeLoan)
   const repayLoan = useGameStore((s) => s.repayLoan)
@@ -168,6 +189,51 @@ export function CompanyPanel({ state, now }: { state: GameState; now: number }) 
         >
           Bônus para a equipe · {formatMoney(staffCost)} (+{staffGain} moral)
         </button>
+      </div>
+
+      <h3 style={{ fontSize: 15, marginTop: 24 }}>Treinamento</h3>
+      <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: -6, maxWidth: 520 }}>
+        Investimentos permanentes na operação, categoria por categoria. Cada nível custa mais que o anterior —
+        é um sumidouro de caixa para quando já sobra dinheiro.
+      </p>
+
+      <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+        {TRAINING_CATEGORIES.map((category) => {
+          const level = state.training[category]
+          const maxed = level >= TRAINING_MAX_LEVEL
+          const cost = trainingCost(level)
+          return (
+            <div
+              key={category}
+              style={{
+                background: 'var(--panel-alt)',
+                border: '1px solid var(--border-soft)',
+                borderRadius: 'var(--radius-sm)',
+                padding: 14,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <strong style={{ color: 'var(--text-h)' }}>{TRAINING_LABEL[category]}</strong>
+              <span style={{ color: 'var(--text-dim)', fontSize: 12 }}>{TRAINING_DESCRIPTION[category]}</span>
+              <span className="stat-chip">
+                Nível <strong>{level}/{TRAINING_MAX_LEVEL}</strong>
+              </span>
+              <span className="stat-chip">
+                Efeito atual <strong style={{ color: 'var(--green)' }}>{trainingEffectLabel(category, level)}</strong>
+              </span>
+              <button
+                className="primary"
+                disabled={maxed || state.cash < cost}
+                title={maxed ? 'Nível máximo' : state.cash < cost ? 'Caixa insuficiente' : undefined}
+                onClick={() => investTraining(category)}
+              >
+                {maxed ? 'Nível máximo' : `Investir · ${formatMoney(cost)}`}
+              </button>
+            </div>
+          )
+        })}
       </div>
 
       <h3 style={{ fontSize: 15, marginTop: 24 }}>Equipe de revenue</h3>

@@ -11,6 +11,7 @@ import {
   estimateLoadFactor,
   STOPOVER_FEE,
   STOPOVER_GROUND_HOURS,
+  trainingMultiplier,
   SEAT_CLASSES,
 } from '../engine/economy'
 import { useGameStore } from '../store/gameStore'
@@ -305,7 +306,7 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
     const via = pickVia ? findAirport(pickVia) : undefined
     const legs = routeLegsKm(pickOrigin!, pickDest, pickVia ?? undefined)
     if (!legs) return null
-    const plan = planFlight(builderModel, legs.leg1Km, legs.leg2Km)
+    const plan = planFlight(builderModel, legs.leg1Km, legs.leg2Km, trainingMultiplier(state.training.fuel))
     const dist = Math.round(plan.distanceKm)
 
     const arc = via
@@ -346,6 +347,7 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
     prices,
     state.company.reputation,
     state.fuel.price,
+    state.training.fuel,
   ])
 
   return (

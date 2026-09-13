@@ -1,4 +1,4 @@
-import type { AircraftCategory, AircraftModel, SeatClass, SeatConfig } from '../types'
+import type { AircraftCategory, AircraftModel, SeatClass, SeatConfig, TrainingCategory } from '../types'
 
 export const TAXI_OVERHEAD_HOURS = 0.3
 
@@ -24,8 +24,9 @@ export function managerFee(revenue: number): number {
 }
 
 /** Fixed upkeep (parking, insurance, base crew) per real hour, as a fraction of the aircraft's value.
- *  Charged whether the aircraft flies or sits — idle fleet bleeds cash. */
-export const FIXED_COST_RATE = 0.000025
+ *  Charged whether the aircraft flies or sits — idle fleet bleeds cash. Deliberately excludes
+ *  maintenance, which is already paid for separately (per-flight wear cost, plus inspections). */
+export const FIXED_COST_RATE = 0.00001
 
 export function fixedCostPerHour(modelPrice: number): number {
   return modelPrice * FIXED_COST_RATE
@@ -65,6 +66,31 @@ export function staffBonusCost(fleetSize: number): number {
 
 export function staffBonusGain(currentMorale: number): number {
   return Math.round(clamp((STAFF_BONUS_BASE_GAIN * (100 - currentMorale)) / 50, 0, STAFF_BONUS_BASE_GAIN))
+}
+
+/** Training: a late-game cash sink with a small, permanent, per-category effect. Each level costs
+ *  more than the last, so maxing out every category is a long-term goal, not a quick buy. */
+export const TRAINING_CATEGORIES: TrainingCategory[] = ['fuel', 'maintenance', 'emissions', 'crew']
+export const TRAINING_LABEL: Record<TrainingCategory, string> = {
+  fuel: 'Eficiência de combustível',
+  maintenance: 'Redução de desgaste',
+  emissions: 'Redução de emissões',
+  crew: 'Eficiência da tripulação',
+}
+export const TRAINING_MAX_LEVEL = 5
+export const TRAINING_BASE_COST = 400_000
+export const TRAINING_COST_GROWTH = 1.7
+/** Fuel/maintenance/emissions: % reduction per level. Crew: percentage points of load factor per level. */
+export const TRAINING_EFFECT_PER_LEVEL = 0.03
+export const CREW_BONUS_PER_LEVEL = 0.015
+
+export function trainingCost(currentLevel: number): number {
+  return Math.round(TRAINING_BASE_COST * TRAINING_COST_GROWTH ** currentLevel)
+}
+
+/** Multiplier for fuel burn, wear accrual or CO2-per-tonne — 1 at level 0, down to 0.85 at max level. */
+export function trainingMultiplier(level: number): number {
+  return 1 - level * TRAINING_EFFECT_PER_LEVEL
 }
 
 /** Loans: borrow against company value, pay ~1%/day interest on the outstanding balance. */
@@ -154,13 +180,14 @@ export interface FlightPlan {
   tonnes: number
 }
 
-/** Plans a flight from leg distances. Pass `leg2Km = 0` for a direct route with no stopover. */
-export function planFlight(model: AircraftModel, leg1Km: number, leg2Km: number): FlightPlan {
+/** Plans a flight from leg distances. Pass `leg2Km = 0` for a direct route with no stopover.
+ *  `fuelMult` applies fuel-efficiency training (1 = none, lower = more efficient). */
+export function planFlight(model: AircraftModel, leg1Km: number, leg2Km: number, fuelMult = 1): FlightPlan {
   if (leg2Km <= 0) {
     return {
       distanceKm: leg1Km,
       hours: flightTimeHours(leg1Km, model.cruiseSpeedKmh),
-      tonnes: fuelTonnes(model, leg1Km),
+      tonnes: fuelTonnes(model, leg1Km) * fuelMult,
     }
   }
   return {
@@ -169,7 +196,7 @@ export function planFlight(model: AircraftModel, leg1Km: number, leg2Km: number)
       flightTimeHours(leg1Km, model.cruiseSpeedKmh) +
       flightTimeHours(leg2Km, model.cruiseSpeedKmh) +
       STOPOVER_GROUND_HOURS,
-    tonnes: fuelTonnes(model, leg1Km) + fuelTonnes(model, leg2Km),
+    tonnes: (fuelTonnes(model, leg1Km) + fuelTonnes(model, leg2Km)) * fuelMult,
   }
 }
 
@@ -208,6 +235,23 @@ export function totalSeatCount(config: SeatConfig): number {
   return SEAT_CLASSES.reduce((sum, cls) => sum + config[cls], 0)
 }
 
+/** Share of the seat-unit budget given to business/first by default — bigger jets skew more premium. */
+const RECOMMENDED_CABIN_SHARE: Record<AircraftCategory, { business: number; first: number }> = {
+  regional: { business: 0.1, first: 0 },
+  narrowbody: { business: 0.2, first: 0.05 },
+  widebody: { business: 0.28, first: 0.12 },
+}
+
+/** A sensible default cabin mix for a model, before any route (and its own demand mix) is known. */
+export function recommendedCabin(model: AircraftModel): SeatConfig {
+  const budget = model.seats
+  const share = RECOMMENDED_CABIN_SHARE[model.category]
+  const business = Math.floor((budget * share.business) / SEAT_UNIT.business)
+  const first = Math.floor((budget * share.first) / SEAT_UNIT.first)
+  const economy = budget - business * SEAT_UNIT.business - first * SEAT_UNIT.first
+  return { economy, business, first }
+}
+
 export interface ClassResult {
   passengers: number
   loadFactor: number
@@ -234,6 +278,7 @@ export function simulateFlight(
   reputation: number,
   fuelPrice: number,
   maintenanceMultiplier = 1,
+  crewBonus = 0,
 ): FlightResult {
   const { distanceKm, hours, tonnes } = plan
   const reputationFactor = 0.6 + (reputation / 100) * 0.4
@@ -252,7 +297,7 @@ export function simulateFlight(
 
     const priceRatio = prices[cls] / fairPriceForClass(distanceKm, cls)
     const loadFactor = clamp(
-      reputationFactor * (1.15 - 0.5 * (priceRatio - 1)) * noise,
+      reputationFactor * (1.15 - 0.5 * (priceRatio - 1)) * noise + crewBonus,
       0.05,
       0.98,
     )

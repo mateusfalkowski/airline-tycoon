@@ -13,6 +13,7 @@ import {
   MANAGER_UNLOCK_FLIGHTS,
   CHECK_INTERVAL_HOURS,
   STOPOVER_FEE,
+  trainingMultiplier,
   SEAT_CLASSES,
 } from '../engine/economy'
 import { computeRouteDemand } from '../engine/demand'
@@ -301,6 +302,7 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
                   hub={state.company.hubCode}
                   reputation={state.company.reputation}
                   fuelPrice={state.fuel.price}
+                  fuelMult={trainingMultiplier(state.training.fuel)}
                   onCancel={() => setEditingAircraft(null)}
                   onCreate={(origin, dest, prices, viaCode) => {
                     createRoute(origin, dest, aircraft.id, prices, viaCode)
@@ -331,6 +333,7 @@ function RouteForm({
   hub,
   reputation,
   fuelPrice,
+  fuelMult,
   onCreate,
   onCancel,
 }: {
@@ -339,6 +342,7 @@ function RouteForm({
   hub: string
   reputation: number
   fuelPrice: number
+  fuelMult: number
   onCreate: (origin: string, dest: string, prices: Record<SeatClass, number>, viaCode?: string) => void
   onCancel: () => void
 }) {
@@ -380,7 +384,7 @@ function RouteForm({
     return initial
   })
 
-  const plan = legs ? planFlight(model, legs.leg1Km, legs.leg2Km) : null
+  const plan = legs ? planFlight(model, legs.leg1Km, legs.leg2Km, fuelMult) : null
   const hours = plan?.hours ?? 0
   const stopoverFee = effectiveVia ? STOPOVER_FEE[model.category] : 0
   const cost = (plan?.tonnes ?? 0) * fuelPrice + model.maintenancePerHour * hours + stopoverFee

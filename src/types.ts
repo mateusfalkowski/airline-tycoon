@@ -142,6 +142,10 @@ export interface CO2State {
 
 export type TutorialStep = 'buy_aircraft' | 'create_route' | 'dispatch_flight' | 'done'
 
+export type TrainingCategory = 'fuel' | 'maintenance' | 'emissions' | 'crew'
+
+export type TrainingLevels = Record<TrainingCategory, number>
+
 export interface GameState {
   version: number
   company: Company
