@@ -52,14 +52,7 @@ function migrateState(saved: GameState): GameState {
       wear: aircraft.wear ?? 0,
       hoursSinceCheck: aircraft.hoursSinceCheck ?? 0,
       totalHours: aircraft.totalHours ?? 0,
-      flight: aircraft.flight
-        ? {
-            ...aircraft.flight,
-            passengers: aircraft.flight.passengers ?? 0,
-            loadFactor: aircraft.flight.loadFactor ?? 0,
-            profit: aircraft.flight.profit ?? 0,
-          }
-        : aircraft.flight,
+      flight: aircraft.flight,
     }
   })
 

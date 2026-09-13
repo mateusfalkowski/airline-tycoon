@@ -580,16 +580,24 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
                   flexWrap: 'wrap',
                 }}
               >
-                <span className="stat-chip">
-                  {selected.ac.flight.passengers} pax · {Math.round(selected.ac.flight.loadFactor * 100)}% ocupação
-                </span>
-                <span
-                  className="stat-chip"
-                  style={{ color: selected.ac.flight.profit >= 0 ? 'var(--green)' : 'var(--red)' }}
-                >
-                  {selected.ac.flight.profit >= 0 ? '+' : ''}
-                  {formatMoney(selected.ac.flight.profit)} nesse voo
-                </span>
+                {selected.ac.flight.passengers !== undefined ? (
+                  <>
+                    <span className="stat-chip">
+                      {selected.ac.flight.passengers} pax · {Math.round(selected.ac.flight.loadFactor! * 100)}% ocupação
+                    </span>
+                    <span
+                      className="stat-chip"
+                      style={{ color: selected.ac.flight.profit! >= 0 ? 'var(--green)' : 'var(--red)' }}
+                    >
+                      {selected.ac.flight.profit! >= 0 ? '+' : ''}
+                      {formatMoney(selected.ac.flight.profit!)} nesse voo
+                    </span>
+                  </>
+                ) : (
+                  <span className="stat-chip" style={{ color: 'var(--text-dim)' }}>
+                    voo iniciado antes desta atualização — sem esses dados
+                  </span>
+                )}
               </div>
             )}
 

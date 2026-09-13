@@ -38,10 +38,11 @@ export interface ActiveFlight {
   arrivesAt: number
   /** Flight-hours — applied to wear/inspection counters when the flight arrives. */
   hours: number
-  /** Settled at dispatch — shown when you tap the aircraft mid-flight. */
-  passengers: number
-  loadFactor: number
-  profit: number
+  /** Settled at dispatch — shown when you tap the aircraft mid-flight.
+   *  Absent for flights already in progress when this field was introduced. */
+  passengers?: number
+  loadFactor?: number
+  profit?: number
 }
 
 export interface OwnedAircraft {
