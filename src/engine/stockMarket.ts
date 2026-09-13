@@ -33,6 +33,16 @@ export function computeValuation(state: GameState): number {
   return state.cash + fleetValue(state) + state.company.reputation * 50_000
 }
 
+/** A prestige score — what you've built, not what it's worth in cash. Deliberately excludes
+ *  cash and debt, unlike valuation, so it only goes up as the operation actually grows. */
+export function computeWorth(state: GameState): number {
+  const fleetPoints = fleetValue(state) / 50_000
+  const routePoints = state.routes.length * 25
+  const reputationPoints = state.company.reputation * 10
+  const milestonePoints = state.achievedMilestones.length * 50
+  return Math.round(fleetPoints + routePoints + reputationPoints + milestonePoints)
+}
+
 export function marketShares(stock: StockState): number {
   return stock.totalShares - stock.playerShares
 }

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import type { GameState } from '../types'
 import { useGameStore, getCompanyValuation } from '../store/gameStore'
-import { formatCountdown, formatMoney } from '../format'
+import { computeWorth } from '../engine/stockMarket'
+import { formatCountdown, formatMoney, formatShares } from '../format'
 import { NumberInput } from './NumberInput'
 import {
   CAMPAIGNS,
@@ -67,6 +68,7 @@ export function CompanyPanel({ state, now }: { state: GameState; now: number }) 
         <Metric label="Frota" value={`${state.fleet.length}`} />
         <Metric label="Rotas" value={`${state.routes.length}`} />
         <Metric label="Voos concluídos" value={`${state.flightsCompleted}`} />
+        <Metric label="Prestígio" value={formatShares(computeWorth(state))} />
       </div>
 
       <div style={{ marginBottom: 18 }}>
