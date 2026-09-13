@@ -38,6 +38,10 @@ export interface ActiveFlight {
   arrivesAt: number
   /** Flight-hours — applied to wear/inspection counters when the flight arrives. */
   hours: number
+  /** Settled at dispatch — shown when you tap the aircraft mid-flight. */
+  passengers: number
+  loadFactor: number
+  profit: number
 }
 
 export interface OwnedAircraft {
@@ -96,6 +100,8 @@ export interface Company {
   reputation: number
   /** Earliest time a new marketing campaign can be run. */
   campaignReadyAt?: number
+  /** Earliest time another staff bonus can be paid out. */
+  staffBonusReadyAt?: number
 }
 
 export interface FuelState {
@@ -113,6 +119,21 @@ export interface FuelState {
   lastPriceTick: number
 }
 
+export interface CO2State {
+  /** Emission quota held, in tonnes of CO2. */
+  stored: number
+  /** Quota storage capacity, in tonnes. */
+  capacity: number
+  /** Weighted-average $/tonne cost of the quota currently held. */
+  avgCost: number
+  /** Current spot price, $/tonne. */
+  price: number
+  /** Recent spot prices for the chart. */
+  history: PricePoint[]
+  /** Timestamp of the last price move. */
+  lastPriceTick: number
+}
+
 export type TutorialStep = 'buy_aircraft' | 'create_route' | 'dispatch_flight' | 'done'
 
 export interface GameState {
@@ -120,6 +141,7 @@ export interface GameState {
   company: Company
   cash: number
   fuel: FuelState
+  co2: CO2State
   fleet: OwnedAircraft[]
   routes: Route[]
   stock: StockState
@@ -137,4 +159,6 @@ export interface GameState {
   achievedMilestones: string[]
   /** When the next random event is scheduled to roll. */
   nextEventAt: number
+  /** Staff morale, 0-100. Low morale raises the odds of a strike event. */
+  staffMorale: number
 }

@@ -1,4 +1,4 @@
-import type { ActiveFlight, FinanceEvent, FuelState, GameState, OwnedAircraft, Route } from '../types'
+import type { ActiveFlight, CO2State, FinanceEvent, FuelState, GameState, OwnedAircraft, Route } from '../types'
 import { findAircraftModel } from '../data/aircraft'
 import { findAirport } from '../data/airports'
 import type { SeatClass } from '../types'
@@ -20,6 +20,7 @@ import {
 } from './economy'
 import { computeRouteDemand } from './demand'
 import { advanceFuelMarket, drawFuel } from './fuel'
+import { CO2_PER_FUEL_TONNE, advanceCO2Market, drawCO2 } from './co2'
 import { runBotTick } from './stockMarket'
 import { updateMilestones } from './milestones'
 import { rollNextEventAt, rollRandomEvent } from './events'
@@ -41,6 +42,7 @@ export interface FlightLanding {
 export interface DispatchOutcome {
   flight: ActiveFlight
   fuel: FuelState
+  co2: CO2State
   cashDelta: number
   reputationDelta: number
   ledger: FinanceEvent
@@ -53,6 +55,7 @@ export function dispatchOutcome(
   aircraft: OwnedAircraft,
   route: Route,
   fuel: FuelState,
+  co2: CO2State,
   reputation: number,
   now: number,
   revenueCut = 0,
@@ -64,8 +67,9 @@ export function dispatchOutcome(
 
   const hours = flightTimeHours(route.distanceKm, model.cruiseSpeedKmh)
   const tonnes = fuelTonnes(model, route.distanceKm)
-  const drawn = drawFuel(fuel, tonnes)
-  const effectiveFuelPrice = tonnes > 0 ? drawn.cost / tonnes : fuel.price
+  const drawnFuel = drawFuel(fuel, tonnes)
+  const effectiveFuelPrice = tonnes > 0 ? drawnFuel.cost / tonnes : fuel.price
+  const drawnCO2 = drawCO2(co2, tonnes * CO2_PER_FUEL_TONNE)
 
   const demand = computeRouteDemand(origin, dest, route.distanceKm, now)
   const result = simulateFlight(
@@ -81,7 +85,7 @@ export function dispatchOutcome(
 
   const fee = aircraft.autoManaged ? managerFee(result.revenue) : 0
   const rmFee = revenueCut * result.revenue
-  const netProfit = result.profit - fee - rmFee
+  const netProfit = result.profit - fee - rmFee - drawnCO2.cost
   const id = nextEventId()
   const auto = aircraft.autoManaged ? ` (auto · gerente −${Math.round(fee).toLocaleString('en-US')})` : ''
 
@@ -91,8 +95,12 @@ export function dispatchOutcome(
       departedAt: now,
       arrivesAt: now + realFlightMs(hours),
       hours,
+      passengers: result.passengers,
+      loadFactor: result.loadFactor,
+      profit: Math.round(netProfit),
     },
-    fuel: drawn.fuel,
+    fuel: drawnFuel.fuel,
+    co2: drawnCO2.co2,
     cashDelta: netProfit,
     reputationDelta: result.reputationDelta,
     ledger: {
@@ -127,6 +135,7 @@ function nextAircraftEventAt(aircraft: OwnedAircraft): number | null {
 interface FleetAdvanceResult {
   fleet: OwnedAircraft[]
   fuel: FuelState
+  co2: CO2State
   cash: number
   reputation: number
   flightsCompleted: number
@@ -141,6 +150,7 @@ function advanceFleetTo(
   fleet: OwnedAircraft[],
   routes: Route[],
   fuel: FuelState,
+  co2: CO2State,
   reputation: number,
   cash: number,
   flightsCompleted: number,
@@ -190,9 +200,10 @@ function advanceFleetTo(
 
     if (updated.autoManaged && updated.hoursSinceCheck < CHECK_INTERVAL_HOURS) {
       const route = routes.find((r) => r.aircraftId === updated.id)
-      const outcome = route ? dispatchOutcome(updated, route, fuel, reputation, pickTime, revenueCut) : null
+      const outcome = route ? dispatchOutcome(updated, route, fuel, co2, reputation, pickTime, revenueCut) : null
       if (outcome) {
         fuel = outcome.fuel
+        co2 = outcome.co2
         cash += outcome.cashDelta
         reputation = clamp(reputation + outcome.reputationDelta, 0, 100)
         landings.push(outcome.landing)
@@ -215,7 +226,7 @@ function advanceFleetTo(
     })
   }
 
-  return { fleet: working, fuel, cash, reputation, flightsCompleted, ledger, landings }
+  return { fleet: working, fuel, co2, cash, reputation, flightsCompleted, ledger, landings }
 }
 
 export function tick(state: GameState): TickResult {
@@ -224,6 +235,7 @@ export function tick(state: GameState): TickResult {
   let reputation = state.company.reputation
   let flightsCompleted = state.flightsCompleted
   let fuel = advanceFuelMarket(state.fuel, now)
+  let co2 = advanceCO2Market(state.co2, now)
   const ledger: FinanceEvent[] = []
   const landings: FlightLanding[] = []
 
@@ -288,11 +300,13 @@ export function tick(state: GameState): TickResult {
   // Random events: rare, short-lived shocks or bonuses.
   let nextEventAt = state.nextEventAt ?? rollNextEventAt(now)
   let eventFleet = state.fleet
+  let staffMorale = state.staffMorale
   if (now >= nextEventAt) {
     const outcome = rollRandomEvent(state, now)
     if (outcome) {
       cash += outcome.cashDelta
       reputation = clamp(reputation + outcome.reputationDelta, 0, 100)
+      staffMorale = clamp(staffMorale + outcome.moraleDelta, 0, 100)
       if (outcome.fleet) eventFleet = outcome.fleet
       ledger.push({ id: nextEventId(), t: now, label: outcome.label, amount: Math.round(outcome.cashDelta) })
     }
@@ -332,9 +346,10 @@ export function tick(state: GameState): TickResult {
     if (aircraft.hoursSinceCheck >= CHECK_INTERVAL_HOURS) return aircraft
     const route = routes.find((r) => r.aircraftId === aircraft.id)
     if (!route) return aircraft
-    const outcome = dispatchOutcome(aircraft, route, fuel, reputation, now, revenueCut)
+    const outcome = dispatchOutcome(aircraft, route, fuel, co2, reputation, now, revenueCut)
     if (!outcome) return aircraft
     fuel = outcome.fuel
+    co2 = outcome.co2
     cash += outcome.cashDelta
     reputation = clamp(reputation + outcome.reputationDelta, 0, 100)
     ledger.push(outcome.ledger)
@@ -346,6 +361,7 @@ export function tick(state: GameState): TickResult {
     ...state,
     cash,
     fuel,
+    co2,
     fleet,
     routes,
     company: { ...state.company, reputation },
@@ -355,6 +371,7 @@ export function tick(state: GameState): TickResult {
     lastFixedLogAt,
     lastRevenueTuneAt,
     nextEventAt,
+    staffMorale,
   }
 
   const botResult = runBotTick(withFleet)
@@ -385,6 +402,7 @@ export function catchUp(state: GameState): TickResult {
     state.fleet,
     state.routes,
     state.fuel,
+    state.co2,
     state.company.reputation,
     state.cash,
     state.flightsCompleted,
@@ -396,6 +414,7 @@ export function catchUp(state: GameState): TickResult {
     ...state,
     fleet: advanced.fleet,
     fuel: advanced.fuel,
+    co2: advanced.co2,
     cash: advanced.cash,
     company: { ...state.company, reputation: advanced.reputation },
     flightsCompleted: advanced.flightsCompleted,

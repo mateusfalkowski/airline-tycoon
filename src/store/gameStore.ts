@@ -24,8 +24,12 @@ import {
   REVENUE_TEAM_UNLOCK_FLIGHTS,
   REVENUE_TEAM_CUT,
   maxLoan,
+  STAFF_BONUS_COST,
+  STAFF_BONUS_COOLDOWN_MS,
+  staffBonusGain,
 } from '../engine/economy'
 import { createInitialFuel, buyFuel, nextDepotUpgrade } from '../engine/fuel'
+import { createInitialCO2, buyCO2 } from '../engine/co2'
 import { rollNextEventAt } from '../engine/events'
 import { tick as runTick, catchUp, dispatchOutcome } from '../engine/simulation'
 import type { FlightLanding } from '../engine/simulation'
@@ -48,6 +52,14 @@ function migrateState(saved: GameState): GameState {
       wear: aircraft.wear ?? 0,
       hoursSinceCheck: aircraft.hoursSinceCheck ?? 0,
       totalHours: aircraft.totalHours ?? 0,
+      flight: aircraft.flight
+        ? {
+            ...aircraft.flight,
+            passengers: aircraft.flight.passengers ?? 0,
+            loadFactor: aircraft.flight.loadFactor ?? 0,
+            profit: aircraft.flight.profit ?? 0,
+          }
+        : aircraft.flight,
     }
   })
 
@@ -64,6 +76,7 @@ function migrateState(saved: GameState): GameState {
     fleet,
     routes,
     fuel: saved.fuel ?? createInitialFuel(Date.now()),
+    co2: saved.co2 ?? createInitialCO2(Date.now()),
     tutorial: !rawTutorial || rawTutorial === 'stock_intro' ? 'done' : (rawTutorial as TutorialStep),
     flightsCompleted: saved.flightsCompleted ?? 0,
     lastFixedLogAt: saved.lastFixedLogAt ?? Date.now(),
@@ -72,6 +85,7 @@ function migrateState(saved: GameState): GameState {
     debt: saved.debt ?? 0,
     achievedMilestones: saved.achievedMilestones ?? [],
     nextEventAt: saved.nextEventAt ?? rollNextEventAt(Date.now()),
+    staffMorale: saved.staffMorale ?? 70,
   }
 }
 
@@ -88,8 +102,10 @@ interface GameStore {
   dispatchFlight: (routeId: string) => void
   toggleAutoManage: (aircraftId: string) => void
   buyFuel: (litres: number) => void
+  buyCO2Quota: (tonnes: number) => void
   upgradeDepot: () => void
   runCampaign: (campaignId: string) => void
+  giveStaffBonus: () => void
   toggleRevenueTeam: () => void
   takeLoan: (amount: number) => void
   repayLoan: (amount: number) => void
@@ -128,6 +144,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       company: { name, hubCode, foundedAt: Date.now(), reputation: 50 },
       cash: STARTING_CASH,
       fuel: createInitialFuel(Date.now()),
+      co2: createInitialCO2(Date.now()),
       fleet: [],
       routes: [],
       stock: createInitialStock(sharePrice),
@@ -141,6 +158,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       debt: 0,
       achievedMilestones: [],
       nextEventAt: rollNextEventAt(Date.now()),
+      staffMorale: 70,
     }
     set({ state: newState })
     persist(newState)
@@ -274,6 +292,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       aircraft,
       route,
       state.fuel,
+      state.co2,
       state.company.reputation,
       now,
       state.revenueTeam ? REVENUE_TEAM_CUT : 0,
@@ -284,6 +303,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ...state,
       cash: state.cash + outcome.cashDelta,
       fuel: outcome.fuel,
+      co2: outcome.co2,
       company: {
         ...state.company,
         reputation: Math.min(100, Math.max(0, state.company.reputation + outcome.reputationDelta)),
@@ -366,6 +386,33 @@ export const useGameStore = create<GameStore>((set, get) => ({
           id: `evt-fuel-${now}`,
           t: now,
           label: `Comprou ${Math.round(amount * 1000).toLocaleString('pt-BR')} kg de combustível`,
+          amount: -Math.round(cost),
+        },
+        ...state.ledger,
+      ].slice(0, 100),
+    }
+    set({ state: next })
+    persist(next)
+  },
+
+  buyCO2Quota: (tonnes) => {
+    const state = get().state
+    if (!state || tonnes <= 0) return
+    const affordable = state.cash / state.co2.price
+    const room = state.co2.capacity - state.co2.stored
+    const amount = Math.min(tonnes, affordable, room)
+    if (amount <= 0) return
+    const { co2, cost } = buyCO2(state.co2, amount)
+    const now = Date.now()
+    const next: GameState = {
+      ...state,
+      co2,
+      cash: state.cash - cost,
+      ledger: [
+        {
+          id: `evt-co2-${now}`,
+          t: now,
+          label: `Comprou ${amount.toFixed(1)} t de cota de CO2`,
           amount: -Math.round(cost),
         },
         ...state.ledger,
@@ -464,6 +511,26 @@ export const useGameStore = create<GameStore>((set, get) => ({
       },
       ledger: [
         { id: `evt-mkt-${now}`, t: now, label: `Campanha de marketing ${c.name} (+${gain} reputação)`, amount: -c.cost },
+        ...state.ledger,
+      ].slice(0, 100),
+    }
+    set({ state: next })
+    persist(next)
+  },
+
+  giveStaffBonus: () => {
+    const state = get().state
+    if (!state || state.cash < STAFF_BONUS_COST) return
+    const now = Date.now()
+    if ((state.company.staffBonusReadyAt ?? 0) > now) return
+    const gain = staffBonusGain(state.staffMorale)
+    const next: GameState = {
+      ...state,
+      cash: state.cash - STAFF_BONUS_COST,
+      company: { ...state.company, staffBonusReadyAt: now + STAFF_BONUS_COOLDOWN_MS },
+      staffMorale: Math.min(100, state.staffMorale + gain),
+      ledger: [
+        { id: `evt-staff-${now}`, t: now, label: `Bônus para a equipe (+${gain} moral)`, amount: -STAFF_BONUS_COST },
         ...state.ledger,
       ].slice(0, 100),
     }
