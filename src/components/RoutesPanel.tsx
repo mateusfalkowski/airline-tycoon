@@ -11,7 +11,7 @@ import {
   managerCap,
   MANAGER_HIRE_FEE,
   MANAGER_UNLOCK_FLIGHTS,
-  CHECK_INTERVAL_HOURS,
+  checkIntervalHours,
   STOPOVER_FEE,
   trainingMultiplier,
   ROUTE_LOYALTY_MAX,
@@ -64,13 +64,16 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
     return s + (m ? fixedCostPerHour(m.price) : 0)
   }, 0) * 24
 
-  const readyToDispatch = state.fleet.filter(
-    (a) =>
+  const readyToDispatch = state.fleet.filter((a) => {
+    const model = findAircraftModel(a.modelId)
+    return (
       a.status === 'idle' &&
       !a.autoManaged &&
-      a.hoursSinceCheck < CHECK_INTERVAL_HOURS &&
-      state.routes.some((r) => r.aircraftId === a.id),
-  )
+      model &&
+      a.hoursSinceCheck < checkIntervalHours(model.category) &&
+      state.routes.some((r) => r.aircraftId === a.id)
+    )
+  })
 
   return (
     <div>

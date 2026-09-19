@@ -2,7 +2,7 @@ import type { GameState } from '../types'
 import { useGameStore } from '../store/gameStore'
 import { findAircraftModel } from '../data/aircraft'
 import { formatCountdown, formatMoney } from '../format'
-import { CHECK_INTERVAL_HOURS, maintenanceHours, inspectionCost, lightMaintenanceCost } from '../engine/economy'
+import { checkIntervalHours, maintenanceHours, inspectionCost, lightMaintenanceCost } from '../engine/economy'
 
 function wearColor(wear: number): string {
   if (wear < 0.4) return 'var(--green)'
@@ -21,9 +21,10 @@ export function MaintenancePanel({ state, now }: { state: GameState; now: number
     <div>
       <h3>Manutenção</h3>
       <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: -8, marginBottom: 14 }}>
-        O desgaste sobe a cada hora de voo e encarece a manutenção. A cada {CHECK_INTERVAL_HOURS}h de voo a
-        aeronave precisa de revisão e não decola até ser revisada. A manutenção deixa o avião parado algumas
-        horas — mais tempo para jatos maiores.
+        O desgaste sobe a cada hora de voo e encarece a manutenção. Depois de {checkIntervalHours('regional')}h
+        (regional), {checkIntervalHours('narrowbody')}h (narrowbody) ou {checkIntervalHours('widebody')}h
+        (widebody) de voo, a aeronave precisa de revisão e não decola até ser revisada. A manutenção deixa o
+        avião parado algumas horas — mais tempo para jatos maiores.
       </p>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -31,8 +32,9 @@ export function MaintenancePanel({ state, now }: { state: GameState; now: number
           const model = findAircraftModel(aircraft.modelId)
           const idle = aircraft.status === 'idle'
           const inShop = aircraft.status === 'maintenance'
-          const checkPct = Math.min(100, (aircraft.hoursSinceCheck / CHECK_INTERVAL_HOURS) * 100)
-          const overdue = aircraft.hoursSinceCheck >= CHECK_INTERVAL_HOURS
+          const interval = model ? checkIntervalHours(model.category) : 0
+          const checkPct = Math.min(100, (aircraft.hoursSinceCheck / interval) * 100)
+          const overdue = aircraft.hoursSinceCheck >= interval
           const soon = !overdue && checkPct >= 75
           const checkCost = model ? inspectionCost(model.price, aircraft.wear) : 0
           const lightCost = model ? lightMaintenanceCost(model.price, aircraft.wear) : 0
@@ -82,7 +84,7 @@ export function MaintenancePanel({ state, now }: { state: GameState; now: number
 
               <Bar label={`Desgaste ${Math.round(aircraft.wear * 100)}%`} pct={aircraft.wear * 100} color={wearColor(aircraft.wear)} />
               <Bar
-                label={`Horas desde a revisão: ${aircraft.hoursSinceCheck.toFixed(1)}h / ${CHECK_INTERVAL_HOURS}h`}
+                label={`Horas desde a revisão: ${aircraft.hoursSinceCheck.toFixed(1)}h / ${interval}h`}
                 pct={checkPct}
                 color={overdue ? 'var(--red)' : 'var(--accent)'}
               />

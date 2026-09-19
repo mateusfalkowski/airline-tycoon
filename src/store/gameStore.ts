@@ -11,7 +11,7 @@ import {
   managerCap,
   MANAGER_HIRE_FEE,
   MANAGER_UNLOCK_FLIGHTS,
-  CHECK_INTERVAL_HOURS,
+  checkIntervalHours,
   maintenanceHours,
   inspectionCost,
   lightMaintenanceCost,
@@ -344,7 +344,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!route) return
     const aircraft = state.fleet.find((a) => a.id === route.aircraftId)
     if (!aircraft || aircraft.status !== 'idle') return
-    if (aircraft.hoursSinceCheck >= CHECK_INTERVAL_HOURS) return
+    const model = findAircraftModel(aircraft.modelId)
+    if (!model || aircraft.hoursSinceCheck >= checkIntervalHours(model.category)) return
 
     const now = Date.now()
     const outcome = dispatchOutcome(

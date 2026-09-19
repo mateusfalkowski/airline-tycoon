@@ -135,14 +135,29 @@ export function retunePrice(
 
 /** Aircraft wear & scheduled inspections. */
 export const WEAR_PER_HOUR = 0.011
-export const CHECK_INTERVAL_HOURS = 150
 
-/** How long an aircraft is grounded for maintenance (real hours) — bigger jets take longer. */
+/** Flight hours between mandatory inspections — the A-check analog. Real A-check intervals run
+ *  roughly 250-750 flight hours depending on type (e.g. ~250h on a 737 Classic, ~750h on an A320);
+ *  smaller airframes with shorter, more frequent hops tend to sit at the low end. */
+export function checkIntervalHours(category: AircraftCategory): number {
+  const table: Record<AircraftCategory, number> = {
+    regional: 250,
+    narrowbody: 450,
+    widebody: 600,
+  }
+  return table[category]
+}
+
+/** How long an aircraft is grounded for maintenance (real hours) — bigger jets take longer.
+ *  Anchored to real turnarounds: "light" tracks a daily/line check (~1-2h downtime overnight);
+ *  "inspection" tracks an A-check (real-world ranges: 6-24h narrowbody, up to 72h widebody,
+ *  shorter for smaller airframes), compressed enough to stay playable but keeping the same
+ *  widening gap between categories that real A-checks have. */
 export function maintenanceHours(category: AircraftCategory, kind: 'light' | 'inspection'): number {
   const table = {
-    regional: { light: 0.75, inspection: 3 },
-    narrowbody: { light: 1.25, inspection: 5 },
-    widebody: { light: 2, inspection: 8 },
+    regional: { light: 1, inspection: 6 },
+    narrowbody: { light: 2, inspection: 14 },
+    widebody: { light: 4, inspection: 32 },
   }
   return table[category][kind]
 }

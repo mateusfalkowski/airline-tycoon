@@ -22,7 +22,7 @@ import {
   retunePrice,
   LOAN_DAILY_RATE,
   WEAR_PER_HOUR,
-  CHECK_INTERVAL_HOURS,
+  checkIntervalHours,
   REVENUE_TEAM_CUT,
   REVENUE_TUNE_INTERVAL_MS,
   SEAT_CLASSES,
@@ -307,21 +307,24 @@ function advanceFleetTo(
       updated = applied.aircraft
       cash = applied.cash
       if (applied.ledgerEntry) scheduledMaintenanceLedger.push(applied.ledgerEntry)
-    } else if (updated.autoManaged && updated.hoursSinceCheck < CHECK_INTERVAL_HOURS) {
-      const route = workingRoutes.find((r) => r.aircraftId === updated.id)
-      const outcome = route
-        ? dispatchOutcome(updated, route, fuel, co2, reputation, pickTime, revenueCut, training, safActive)
-        : null
-      if (outcome && route) {
-        fuel = outcome.fuel
-        co2 = outcome.co2
-        cash += outcome.cashDelta
-        reputation = clamp(reputation + outcome.reputationDelta, 0, 100)
-        landings.push(outcome.landing)
-        autoFlights += 1
-        autoProfit += outcome.cashDelta
-        updated = { ...updated, status: 'flying', flight: outcome.flight, homeSide: outcome.homeSide }
-        workingRoutes = workingRoutes.map((r) => (r.id === route.id ? { ...r, loyalty: outcome.routeLoyalty } : r))
+    } else {
+      const model = findAircraftModel(updated.modelId)
+      if (updated.autoManaged && model && updated.hoursSinceCheck < checkIntervalHours(model.category)) {
+        const route = workingRoutes.find((r) => r.aircraftId === updated.id)
+        const outcome = route
+          ? dispatchOutcome(updated, route, fuel, co2, reputation, pickTime, revenueCut, training, safActive)
+          : null
+        if (outcome && route) {
+          fuel = outcome.fuel
+          co2 = outcome.co2
+          cash += outcome.cashDelta
+          reputation = clamp(reputation + outcome.reputationDelta, 0, 100)
+          landings.push(outcome.landing)
+          autoFlights += 1
+          autoProfit += outcome.cashDelta
+          updated = { ...updated, status: 'flying', flight: outcome.flight, homeSide: outcome.homeSide }
+          workingRoutes = workingRoutes.map((r) => (r.id === route.id ? { ...r, loyalty: outcome.routeLoyalty } : r))
+        }
       }
     }
 
@@ -475,7 +478,8 @@ export function tick(state: GameState): TickResult {
   // Auto-dispatch: managed aircraft that are idle, not overdue for inspection, take off again.
   fleet = fleet.map((aircraft): OwnedAircraft => {
     if (!aircraft.autoManaged || aircraft.status !== 'idle') return aircraft
-    if (aircraft.hoursSinceCheck >= CHECK_INTERVAL_HOURS) return aircraft
+    const model = findAircraftModel(aircraft.modelId)
+    if (!model || aircraft.hoursSinceCheck >= checkIntervalHours(model.category)) return aircraft
     const route = routes.find((r) => r.aircraftId === aircraft.id)
     if (!route) return aircraft
     const outcome = dispatchOutcome(aircraft, route, fuel, co2, reputation, now, revenueCut, state.training, state.safEnabled)

@@ -12,7 +12,8 @@ import { WorldMap } from './components/WorldMap'
 import { CompanyPanel } from './components/CompanyPanel'
 import { TutorialBanner } from './components/TutorialBanner'
 import { LandingToasts } from './components/LandingToasts'
-import { CHECK_INTERVAL_HOURS } from './engine/economy'
+import { checkIntervalHours } from './engine/economy'
+import { findAircraftModel } from './data/aircraft'
 import type { TutorialStep } from './types'
 
 const TABS = ['Mapa', 'Rotas', 'Mercado', 'Combustível', 'Manutenção', 'Companhia', 'Bolsa', 'Extrato'] as const
@@ -66,7 +67,10 @@ function App() {
 
   const activeTab = lockedTab ?? tab
 
-  const inspectionsDue = state.fleet.filter((a) => a.hoursSinceCheck >= CHECK_INTERVAL_HOURS).length
+  const inspectionsDue = state.fleet.filter((a) => {
+    const model = findAircraftModel(a.modelId)
+    return model && a.hoursSinceCheck >= checkIntervalHours(model.category)
+  }).length
   const fuelLow = state.fuel.stored <= 0 && state.routes.length > 0
   const alerts: { text: string; tab: Tab }[] = []
   if (state.cash < 0)
