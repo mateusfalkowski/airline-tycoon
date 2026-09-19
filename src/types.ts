@@ -77,6 +77,9 @@ export interface OwnedAircraft {
   /** While status === 'maintenance': what's being done and when it finishes. */
   maintenanceKind?: MaintenanceKind
   maintenanceUntil?: number
+  /** Queued while flying — applied automatically the moment it lands, instead of going idle,
+   *  so you don't have to come back and click again after it's back on the ground. */
+  scheduledMaintenance?: 'light' | 'inspection'
 }
 
 export interface Route {

@@ -11,8 +11,7 @@ function wearColor(wear: number): string {
 }
 
 export function MaintenancePanel({ state, now }: { state: GameState; now: number }) {
-  const serviceAircraft = useGameStore((s) => s.serviceAircraft)
-  const lightMaintenance = useGameStore((s) => s.lightMaintenance)
+  const scheduleMaintenance = useGameStore((s) => s.scheduleMaintenance)
 
   if (state.fleet.length === 0) {
     return <p style={{ color: 'var(--text-dim)' }}>Sem aeronaves para manter.</p>
@@ -70,7 +69,9 @@ export function MaintenancePanel({ state, now }: { state: GameState; now: number
                   {inShop
                     ? `${aircraft.maintenanceKind === 'inspection' ? 'Em revisão' : 'Em manutenção'} · pronta em ${formatCountdown((aircraft.maintenanceUntil ?? now) - now)}`
                     : aircraft.status === 'flying'
-                      ? 'Voando'
+                      ? aircraft.scheduledMaintenance
+                        ? `Voando · ${aircraft.scheduledMaintenance === 'inspection' ? 'revisão' : 'manutenção leve'} agendada para o pouso`
+                        : 'Voando'
                       : overdue
                         ? 'Revisão pendente'
                         : soon
@@ -89,18 +90,25 @@ export function MaintenancePanel({ state, now }: { state: GameState; now: number
 
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button
-                  disabled={!idle || aircraft.wear < 0.02 || state.cash < lightCost}
-                  onClick={() => lightMaintenance(aircraft.id)}
+                  disabled={inShop || aircraft.wear < 0.02 || (idle && state.cash < lightCost)}
+                  onClick={() => scheduleMaintenance(aircraft.id, 'light')}
                 >
-                  Manutenção leve · {formatMoney(lightCost)} · {lightHrs}h
+                  {aircraft.scheduledMaintenance === 'light'
+                    ? 'Cancelar manutenção leve agendada'
+                    : idle
+                      ? `Manutenção leve · ${formatMoney(lightCost)} · ${lightHrs}h`
+                      : `Agendar manutenção leve para o pouso · ${formatMoney(lightCost)} · ${lightHrs}h`}
                 </button>
                 <button
                   className={overdue ? 'primary' : undefined}
-                  disabled={!idle || state.cash < checkCost}
-                  title={!idle ? 'A aeronave precisa estar em solo' : undefined}
-                  onClick={() => serviceAircraft(aircraft.id)}
+                  disabled={inShop || (idle && state.cash < checkCost)}
+                  onClick={() => scheduleMaintenance(aircraft.id, 'inspection')}
                 >
-                  Fazer revisão · {formatMoney(checkCost)} · {checkHrs}h
+                  {aircraft.scheduledMaintenance === 'inspection'
+                    ? 'Cancelar revisão agendada'
+                    : idle
+                      ? `Fazer revisão · ${formatMoney(checkCost)} · ${checkHrs}h`
+                      : `Agendar revisão para o pouso · ${formatMoney(checkCost)} · ${checkHrs}h`}
                 </button>
               </div>
             </div>

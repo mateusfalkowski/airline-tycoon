@@ -32,6 +32,9 @@ import {
   cargoRevenueForFlight,
   ROUTE_LOYALTY_BONUS_PER_POINT,
   nextRouteLoyalty,
+  inspectionCost,
+  lightMaintenanceCost,
+  maintenanceHours,
 } from './economy'
 import { computeRouteDemand } from './demand'
 import { advanceFuelMarket, drawFuel, fuelCountryMultiplier, SAF_EMISSIONS_CUT } from './fuel'
@@ -194,6 +197,39 @@ function nextAircraftEventAt(aircraft: OwnedAircraft): number | null {
   return null
 }
 
+/** If maintenance was queued for this landing, starts it now (paid out of the given cash)
+ *  instead of leaving the aircraft idle. Silently skipped if it can't be afforded — the
+ *  aircraft just goes idle as usual, still due, same as if nothing had been queued. */
+function applyScheduledMaintenance(
+  aircraft: OwnedAircraft,
+  cash: number,
+  now: number,
+): { aircraft: OwnedAircraft; cash: number; ledgerEntry?: FinanceEvent } {
+  const kind = aircraft.scheduledMaintenance
+  if (!kind) return { aircraft, cash }
+  const model = findAircraftModel(aircraft.modelId)
+  if (!model) return { aircraft: { ...aircraft, scheduledMaintenance: undefined }, cash }
+  const cost = kind === 'inspection' ? inspectionCost(model.price, aircraft.wear) : lightMaintenanceCost(model.price, aircraft.wear)
+  if (cash < cost) return { aircraft: { ...aircraft, scheduledMaintenance: undefined }, cash }
+  const hrs = maintenanceHours(model.category, kind)
+  return {
+    aircraft: {
+      ...aircraft,
+      status: 'maintenance',
+      scheduledMaintenance: undefined,
+      maintenanceKind: kind,
+      maintenanceUntil: now + realFlightMs(hrs),
+    },
+    cash: cash - cost,
+    ledgerEntry: {
+      id: nextEventId(),
+      t: now,
+      label: `${kind === 'inspection' ? 'Revisão' : 'Manutenção leve'} agendada: ${model.name} (${hrs}h)`,
+      amount: -cost,
+    },
+  }
+}
+
 interface FleetAdvanceResult {
   fleet: OwnedAircraft[]
   routes: Route[]
@@ -225,6 +261,7 @@ function advanceFleetTo(
   let working = fleet
   let workingRoutes = routes
   const landings: FlightLanding[] = []
+  const scheduledMaintenanceLedger: FinanceEvent[] = []
   let autoFlights = 0
   let autoProfit = 0
   const wearMult = trainingMultiplier(training.maintenance)
@@ -265,7 +302,12 @@ function advanceFleetTo(
       totalHours: aircraft.totalHours + h,
     }
 
-    if (updated.autoManaged && updated.hoursSinceCheck < CHECK_INTERVAL_HOURS) {
+    if (updated.scheduledMaintenance) {
+      const applied = applyScheduledMaintenance(updated, cash, pickTime)
+      updated = applied.aircraft
+      cash = applied.cash
+      if (applied.ledgerEntry) scheduledMaintenanceLedger.push(applied.ledgerEntry)
+    } else if (updated.autoManaged && updated.hoursSinceCheck < CHECK_INTERVAL_HOURS) {
       const route = workingRoutes.find((r) => r.aircraftId === updated.id)
       const outcome = route
         ? dispatchOutcome(updated, route, fuel, co2, reputation, pickTime, revenueCut, training, safActive)
@@ -286,7 +328,7 @@ function advanceFleetTo(
     working = working.map((a, i) => (i === pickIdx ? updated : a))
   }
 
-  const ledger: FinanceEvent[] = []
+  const ledger: FinanceEvent[] = [...scheduledMaintenanceLedger]
   if (autoFlights > 0) {
     ledger.push({
       id: nextEventId(),
@@ -413,7 +455,7 @@ export function tick(state: GameState): TickResult {
     // Flight arrived — money was settled at dispatch; apply the physical toll and free the aircraft.
     const h = aircraft.flight.hours
     flightsCompleted += 1
-    return {
+    const landed: OwnedAircraft = {
       ...aircraft,
       status: 'idle' as const,
       flight: undefined,
@@ -421,6 +463,13 @@ export function tick(state: GameState): TickResult {
       hoursSinceCheck: aircraft.hoursSinceCheck + h,
       totalHours: aircraft.totalHours + h,
     }
+    if (landed.scheduledMaintenance) {
+      const applied = applyScheduledMaintenance(landed, cash, now)
+      cash = applied.cash
+      if (applied.ledgerEntry) ledger.push(applied.ledgerEntry)
+      return applied.aircraft
+    }
+    return landed
   })
 
   // Auto-dispatch: managed aircraft that are idle, not overdue for inspection, take off again.

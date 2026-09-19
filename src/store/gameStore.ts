@@ -117,6 +117,7 @@ interface GameStore {
   repayLoan: (amount: number) => void
   serviceAircraft: (aircraftId: string) => void
   lightMaintenance: (aircraftId: string) => void
+  scheduleMaintenance: (aircraftId: string, kind: 'light' | 'inspection') => void
   doTick: () => void
   dismissLanding: (id: string) => void
   listCompany: () => void
@@ -738,6 +739,33 @@ export const useGameStore = create<GameStore>((set, get) => ({
         { id: `evt-lightmx-${now}`, t: now, label: `Manutenção leve de ${model.name} (${hrs}h)`, amount: -cost },
         ...state.ledger,
       ].slice(0, 100),
+    }
+    set({ state: next })
+    persist(next)
+  },
+
+  /** While the aircraft is on the ground, does the maintenance right away — same as the actions
+   *  above. While it's flying, queues it instead: the moment it lands it goes straight into the
+   *  shop, no need to come back and click again. Clicking the same kind again cancels it. */
+  scheduleMaintenance: (aircraftId, kind) => {
+    const state = get().state
+    if (!state) return
+    const aircraft = state.fleet.find((a) => a.id === aircraftId)
+    if (!aircraft || aircraft.status === 'maintenance') return
+
+    if (aircraft.status === 'idle') {
+      if (kind === 'inspection') get().serviceAircraft(aircraftId)
+      else get().lightMaintenance(aircraftId)
+      return
+    }
+
+    const next: GameState = {
+      ...state,
+      fleet: state.fleet.map((a) =>
+        a.id === aircraftId
+          ? { ...a, scheduledMaintenance: a.scheduledMaintenance === kind ? undefined : kind }
+          : a,
+      ),
     }
     set({ state: next })
     persist(next)
