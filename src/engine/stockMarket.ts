@@ -22,8 +22,10 @@ export function createInitialStock(sharePrice: number): StockState {
   }
 }
 
+/** Owned aircraft only — a leased one isn't equity, it's a rental, and gives back $0 if returned. */
 export function fleetValue(state: GameState): number {
   return state.fleet.reduce((sum, ac) => {
+    if (ac.leased) return sum
     const model = findAircraftModel(ac.modelId)
     return sum + (model ? model.price * 0.85 : 0)
   }, 0)
