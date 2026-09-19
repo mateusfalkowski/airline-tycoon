@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { AircraftModel, GameState, Route, SeatClass, TutorialStep } from '../types'
-import { AIRPORTS, findAirport, routeLegsKm, isRouteReachable } from '../data/airports'
+import { AIRPORTS, findAirport, routeLegsKm, isRouteReachable, hasFreeSlot, airportSlotCapacity, slotsUsed } from '../data/airports'
 import { findAircraftModel } from '../data/aircraft'
 import { distanceKm } from '../engine/geo'
 import {
@@ -317,6 +317,7 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
                   reputation={state.company.reputation}
                   fuelPrice={state.fuel.price}
                   fuelMult={trainingMultiplier(state.training.fuel)}
+                  routes={state.routes}
                   onCancel={() => setEditingAircraft(null)}
                   onCreate={(origin, dest, prices, viaCode) => {
                     createRoute(origin, dest, aircraft.id, prices, viaCode)
@@ -348,6 +349,7 @@ function RouteForm({
   reputation,
   fuelPrice,
   fuelMult,
+  routes,
   onCreate,
   onCancel,
 }: {
@@ -357,6 +359,7 @@ function RouteForm({
   reputation: number
   fuelPrice: number
   fuelMult: number
+  routes: Route[]
   onCreate: (origin: string, dest: string, prices: Record<SeatClass, number>, viaCode?: string) => void
   onCancel: () => void
 }) {
@@ -377,7 +380,8 @@ function RouteForm({
             a.code !== origin &&
             a.code !== dest &&
             distanceKm(originAirport, a) <= model.rangeKm &&
-            distanceKm(a, destAirport) <= model.rangeKm,
+            distanceKm(a, destAirport) <= model.rangeKm &&
+            hasFreeSlot(routes, a.code),
         )
       : []
   const effectiveVia = directOutOfRange && via && viaCandidates.some((a) => a.code === via) ? via : undefined
@@ -390,8 +394,15 @@ function RouteForm({
     const a = findAirport(code)
     return !!originAirport && !!a && distanceKm(originAirport, a) <= model.rangeKm
   }
-  const reachable = (code: string): boolean => inRange(code) || isRouteReachable(origin, code, model.rangeKm)
+  // null means selectable; otherwise the reason it's grayed out, worst-first.
+  const unavailableReason = (code: string): string | null => {
+    if (!hasFreeSlot(routes, code)) return ' (sem vagas)'
+    if (inRange(code)) return null
+    return isRouteReachable(origin, code, model.rangeKm) ? ' (precisa de escala)' : ' (fora de alcance)'
+  }
   const outOfRange = directOutOfRange && !effectiveVia
+  const destSlotFull = !hasFreeSlot(routes, dest)
+  const viaSlotFull = !!effectiveVia && !hasFreeSlot(routes, effectiveVia)
 
   const [prices, setPrices] = useState<Record<SeatClass, number>>(() => {
     const initial = {} as Record<SeatClass, number>
@@ -440,14 +451,20 @@ function RouteForm({
             }}
           >
             {AIRPORTS.filter((a) => a.code !== origin).map((a) => (
-              <option key={a.code} value={a.code} disabled={!reachable(a.code)}>
+              <option key={a.code} value={a.code} disabled={unavailableReason(a.code) !== null}>
                 {a.code} — {a.city}
-                {inRange(a.code) ? '' : reachable(a.code) ? ' (precisa de escala)' : ' (fora de alcance)'}
+                {unavailableReason(a.code) ?? ''}
               </option>
             ))}
           </select>
         </Field>
       </div>
+
+      {originAirport && (
+        <div className="stat-chip" style={{ color: 'var(--text-dim)' }}>
+          Vagas em {origin}: {slotsUsed(routes, origin)}/{airportSlotCapacity(originAirport.weight)}
+        </div>
+      )}
 
       {directOutOfRange && (
         <Field label="Escala — destino fora do alcance direto">
@@ -472,6 +489,11 @@ function RouteForm({
         aeronave {model.rangeKm.toLocaleString('pt-BR')} km
         {outOfRange ? ' — rota longa demais' : ''}
       </div>
+      {(destSlotFull || viaSlotFull) && (
+        <div className="stat-chip" style={{ color: 'var(--red)' }}>
+          {destSlotFull ? `${dest} sem vagas de pouso disponíveis` : `${effectiveVia} sem vagas de pouso disponíveis`}
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         {activeClasses.map((cls) => (
@@ -519,7 +541,7 @@ function RouteForm({
       <div style={{ display: 'flex', gap: 8 }}>
         <button
           className="primary"
-          disabled={origin === dest || outOfRange}
+          disabled={origin === dest || outOfRange || destSlotFull || viaSlotFull}
           onClick={() => onCreate(origin, dest, prices, effectiveVia)}
         >
           Criar rota

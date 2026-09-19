@@ -1,4 +1,4 @@
-import type { Airport } from '../types'
+import type { Airport, Route } from '../types'
 import { distanceKm } from '../engine/geo'
 
 export const AIRPORTS: Airport[] = [
@@ -89,4 +89,23 @@ export function isRouteReachable(originCode: string, destCode: string, rangeKm: 
     if (via.code === originCode || via.code === destCode) return false
     return distanceKm(origin, via) <= rangeKm && distanceKm(via, dest) <= rangeKm
   })
+}
+
+/** Busier airports only have so many gates to go around — smaller ones are generous enough that
+ *  this rarely binds, but a mega-hub built entirely through one big airport eventually will. */
+export function airportSlotCapacity(weight: number): number {
+  return Math.max(6, Math.round(weight / 10))
+}
+
+/** How many of the player's routes already touch this airport, as origin, destination or stopover. */
+export function slotsUsed(routes: Route[], airportCode: string): number {
+  return routes.filter((r) => r.originCode === airportCode || r.destCode === airportCode || r.viaCode === airportCode)
+    .length
+}
+
+/** Whether one more route could still touch this airport without exceeding its slot capacity. */
+export function hasFreeSlot(routes: Route[], airportCode: string): boolean {
+  const airport = findAirport(airportCode)
+  if (!airport) return false
+  return slotsUsed(routes, airportCode) < airportSlotCapacity(airport.weight)
 }

@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { GameState, OwnedAircraft, Route, SeatClass, SeatConfig, TrainingCategory } from '../types'
 import type { TutorialStep } from '../types'
 import { findAircraftModel } from '../data/aircraft'
-import { routeLegsKm } from '../data/airports'
+import { routeLegsKm, hasFreeSlot } from '../data/airports'
 import {
   planFlight,
   realFlightMs,
@@ -285,6 +285,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!legs) return
     const model = findAircraftModel(aircraft.modelId)
     if (model && (legs.leg1Km > model.rangeKm || legs.leg2Km > model.rangeKm)) return
+    const touchedAirports = [originCode, destCode, viaCode].filter((c): c is string => !!c)
+    if (touchedAirports.some((code) => !hasFreeSlot(state.routes, code))) return
 
     const plan = model ? planFlight(model, legs.leg1Km, legs.leg2Km) : null
 

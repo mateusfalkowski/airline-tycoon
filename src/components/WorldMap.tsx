@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, type PointerEvent, type WheelEvent } from 'react'
 import type { GameState, SeatClass } from '../types'
-import { AIRPORTS, findAirport, routeLegsKm, isRouteReachable } from '../data/airports'
+import { AIRPORTS, findAirport, routeLegsKm, isRouteReachable, hasFreeSlot } from '../data/airports'
 import { findAircraftModel } from '../data/aircraft'
 import { distanceKm, interpolateGreatCircle } from '../engine/geo'
 import { computeRouteDemand, seasonalMultiplier } from '../engine/demand'
@@ -204,12 +204,14 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
   }
   const needsVia = building && !!pickDest && !inRange(pickDest)
   const destReachable = (code: string): boolean => {
+    if (!hasFreeSlot(state.routes, code)) return false
     if (!builderModel || !originAp) return true
     return inRange(code) || isRouteReachable(originAp.code, code, builderModel.rangeKm)
   }
   const viaEligible = (code: string): boolean => {
     if (!builderModel || !originAp || !pickDest) return false
     if (code === pickOrigin || code === pickDest) return false
+    if (!hasFreeSlot(state.routes, code)) return false
     const destAp = findAirport(pickDest)
     const viaAp = findAirport(code)
     if (!destAp || !viaAp) return false
@@ -220,6 +222,7 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
     if (suppressClickRef.current) return
     if (!building) return
     if (!pickOrigin) {
+      if (!hasFreeSlot(state.routes, code)) return
       setPickOrigin(code)
       return
     }
@@ -531,6 +534,7 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
             const isVia = building && pickVia === a.code
             const isHovered = hoverAirport === a.code
             const disabled =
+              (building && !pickOrigin && !hasFreeSlot(state.routes, a.code)) ||
               (building && !!pickOrigin && !pickDest && a.code !== pickOrigin && !destReachable(a.code)) ||
               (building && !!pickDest && needsVia && a.code !== pickOrigin && a.code !== pickDest && !viaEligible(a.code))
             // Most airports sit out as a quiet dot — only the ones actually in play (hub, a
@@ -820,9 +824,16 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
             </span>
           </div>
 
+          {pickOrigin && !hasFreeSlot(state.routes, pickOrigin) && (
+            <div className="stat-chip" style={{ color: 'var(--red)' }}>
+              {pickOrigin} sem vagas de pouso disponíveis
+            </div>
+          )}
+
           <div style={{ display: 'flex', gap: 8 }}>
             <button
               className="primary"
+              disabled={!pickOrigin || !hasFreeSlot(state.routes, pickOrigin)}
               onClick={() => {
                 createRoute(pickOrigin!, pickDest!, builderAircraft.id, prices, pickVia ?? undefined)
                 resetBuilder()
