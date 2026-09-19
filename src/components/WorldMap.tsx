@@ -687,6 +687,16 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
                       {selected.ac.flight.profit! >= 0 ? '+' : ''}
                       {formatMoney(selected.ac.flight.profit!)} nesse voo
                     </span>
+                    {!!selected.ac.flight.localFuelCountries?.length && (
+                      <span className="stat-chip" style={{ color: 'var(--text-dim)' }}>
+                        combustível local ({selected.ac.flight.localFuelCountries.join(', ')})
+                      </span>
+                    )}
+                    {!!selected.ac.flight.cargoRevenue && (
+                      <span className="stat-chip" style={{ color: 'var(--text-dim)' }}>
+                        +{formatMoney(selected.ac.flight.cargoRevenue)} carga
+                      </span>
+                    )}
                   </>
                 ) : (
                   <span className="stat-chip" style={{ color: 'var(--text-dim)' }}>

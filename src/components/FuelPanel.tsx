@@ -143,6 +143,10 @@ export function FuelPanel({ state, now }: { state: GameState; now: number }) {
           Voos consomem primeiro do depósito (ao custo médio que você pagou); o que faltar é comprado no preço
           spot do momento. Estoque quando estiver barato.
         </p>
+        <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: 6 }}>
+          O depósito só existe na sua base. No trecho de volta de uma rota (partindo do outro lado), o avião
+          abastece localmente no preço daquele país — pode sair mais barato ou mais caro que o spot.
+        </p>
       </div>
 
       <div style={{ marginTop: 28, paddingTop: 18, borderTop: '1px solid var(--border-soft)' }}>

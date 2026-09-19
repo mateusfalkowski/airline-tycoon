@@ -48,6 +48,11 @@ export interface ActiveFlight {
   passengers?: number
   loadFactor?: number
   profit?: number
+  /** Belly cargo revenue folded into `profit` — broken out here just for display. */
+  cargoRevenue?: number
+  /** Distinct countries this flight bought fuel in away from the home depot — the departure
+   *  airport when it isn't the route's home side, and always the stopover, if there is one. */
+  localFuelCountries?: string[]
 }
 
 export interface OwnedAircraft {
@@ -84,6 +89,9 @@ export interface Route {
   distanceKm: number
   /** Total elapsed hours — both legs plus stopover ground time, when there's a stopover. */
   flightTimeHours: number
+  /** Repeat-customer loyalty built up on this specific route, 0-50 — nudges its load factor up.
+   *  Absent means 0; resets if the route is deleted and recreated. */
+  loyalty?: number
 }
 
 export interface PricePoint {

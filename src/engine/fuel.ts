@@ -92,3 +92,43 @@ export function drawFuel(fuel: FuelState, litres: number): { fuel: FuelState; co
   const cost = fromDepot * fuel.avgCost + fromSpot * fuel.price
   return { fuel: { ...fuel, stored: fuel.stored - fromDepot }, cost }
 }
+
+/** Local fuel price, as a multiple of the home spot price — taxes, subsidies and how far fuel
+ *  has to travel vary a lot by country in reality. Only matters away from base: the depot only
+ *  exists at the hub, so a flight departing from the other end of the route can't draw on it and
+ *  buys locally instead, at whatever this country charges. Unlisted countries pay the base rate. */
+export const FUEL_COUNTRY_MULTIPLIER: Record<string, number> = {
+  Brasil: 1.05,
+  EUA: 0.95,
+  México: 1.0,
+  Colômbia: 1.05,
+  Chile: 1.0,
+  Argentina: 1.15,
+  Portugal: 1.1,
+  Espanha: 1.05,
+  'Reino Unido': 1.15,
+  França: 1.1,
+  Alemanha: 1.1,
+  'Países Baixos': 1.05,
+  EAU: 0.75,
+  'África do Sul': 1.1,
+  Japão: 1.2,
+  Singapura: 0.85,
+  Austrália: 1.15,
+  Panamá: 0.9,
+  Peru: 1.05,
+  Uruguai: 1.0,
+  Canadá: 1.0,
+  'Cabo Verde': 1.25,
+  Senegal: 1.2,
+  Turquia: 1.05,
+  Egito: 1.0,
+  Catar: 0.7,
+  Índia: 1.1,
+  Tailândia: 1.0,
+  'Hong Kong': 0.9,
+}
+
+export function fuelCountryMultiplier(country: string): number {
+  return FUEL_COUNTRY_MULTIPLIER[country] ?? 1
+}

@@ -14,6 +14,7 @@ import {
   CHECK_INTERVAL_HOURS,
   STOPOVER_FEE,
   trainingMultiplier,
+  ROUTE_LOYALTY_MAX,
   SEAT_CLASSES,
 } from '../engine/economy'
 import { computeRouteDemand } from '../engine/demand'
@@ -151,6 +152,13 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
                     </strong>{' '}
                     · {route.distanceKm.toLocaleString('pt-BR')} km · {formatDuration(route.flightTimeHours)} de voo
                     {route.viaCode ? ' (com escala)' : ''}
+                  </div>
+                  <div
+                    className="stat-chip"
+                    style={{ fontSize: 11, color: 'var(--text-dim)' }}
+                    title="Cresce a cada voo despachado nesta rota, até o máximo — clientes fiéis enchem mais os voos."
+                  >
+                    Fidelidade {route.loyalty ?? 0}/{ROUTE_LOYALTY_MAX}
                   </div>
                   {editingPrices?.routeId === route.id ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

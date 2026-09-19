@@ -149,6 +149,43 @@ export function lightMaintenanceCost(modelPrice: number, wear: number): number {
   return Math.round(modelPrice * 0.004 + wear * 150_000)
 }
 
+/** Belly cargo: a parallel revenue stream that doesn't compete with passengers for seats.
+ *  Capacity scales with aircraft size; how much of it sells scales with how busy both airports
+ *  are, same signal passenger demand uses. No separate cargo market to manage — it just adds to
+ *  every flight's settlement. */
+export const CARGO_CAPACITY_TONNES: Record<AircraftCategory, number> = {
+  regional: 1.5,
+  narrowbody: 6,
+  widebody: 20,
+}
+
+export function cargoRatePerKg(distanceKm: number): number {
+  return 0.4 + 0.00025 * distanceKm
+}
+
+export function cargoRevenueForFlight(
+  category: AircraftCategory,
+  originWeight: number,
+  destWeight: number,
+  distanceKm: number,
+): number {
+  const capacity = CARGO_CAPACITY_TONNES[category]
+  const fillFactor = clamp(Math.sqrt(originWeight * destWeight) / 100, 0.2, 1)
+  const tonnesCarried = capacity * fillFactor
+  return tonnesCarried * 1000 * cargoRatePerKg(distanceKm)
+}
+
+/** Per-route loyalty: repeat customers on a route you keep flying gradually fill it better.
+ *  Builds slowly with every dispatch, caps out, and resets only if the route itself is deleted
+ *  and recreated. */
+export const ROUTE_LOYALTY_MAX = 50
+export const ROUTE_LOYALTY_PER_FLIGHT = 1
+export const ROUTE_LOYALTY_BONUS_PER_POINT = 0.002
+
+export function nextRouteLoyalty(currentLoyalty: number): number {
+  return Math.min(ROUTE_LOYALTY_MAX, currentLoyalty + ROUTE_LOYALTY_PER_FLIGHT)
+}
+
 export const SEAT_CLASSES: SeatClass[] = ['economy', 'business', 'first']
 
 export const SEAT_UNIT: Record<SeatClass, number> = { economy: 1, business: 2, first: 4 }
@@ -178,25 +215,36 @@ export interface FlightPlan {
   hours: number
   /** Total fuel burned, in tonnes — each leg pays its own takeoff/climb overhead. */
   tonnes: number
+  /** Fuel burned on the first leg alone — bought wherever that leg departs from. */
+  leg1Tonnes: number
+  /** Fuel burned on the second leg alone (0 without a stopover) — always bought at the
+   *  stopover, since the depot only exists at the route's own two ends. */
+  leg2Tonnes: number
 }
 
 /** Plans a flight from leg distances. Pass `leg2Km = 0` for a direct route with no stopover.
  *  `fuelMult` applies fuel-efficiency training (1 = none, lower = more efficient). */
 export function planFlight(model: AircraftModel, leg1Km: number, leg2Km: number, fuelMult = 1): FlightPlan {
+  const leg1Tonnes = fuelTonnes(model, leg1Km) * fuelMult
   if (leg2Km <= 0) {
     return {
       distanceKm: leg1Km,
       hours: flightTimeHours(leg1Km, model.cruiseSpeedKmh),
-      tonnes: fuelTonnes(model, leg1Km) * fuelMult,
+      tonnes: leg1Tonnes,
+      leg1Tonnes,
+      leg2Tonnes: 0,
     }
   }
+  const leg2Tonnes = fuelTonnes(model, leg2Km) * fuelMult
   return {
     distanceKm: leg1Km + leg2Km,
     hours:
       flightTimeHours(leg1Km, model.cruiseSpeedKmh) +
       flightTimeHours(leg2Km, model.cruiseSpeedKmh) +
       STOPOVER_GROUND_HOURS,
-    tonnes: (fuelTonnes(model, leg1Km) + fuelTonnes(model, leg2Km)) * fuelMult,
+    tonnes: leg1Tonnes + leg2Tonnes,
+    leg1Tonnes,
+    leg2Tonnes,
   }
 }
 

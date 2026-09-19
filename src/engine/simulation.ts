@@ -28,9 +28,12 @@ import {
   STOPOVER_FEE,
   trainingMultiplier,
   CREW_BONUS_PER_LEVEL,
+  cargoRevenueForFlight,
+  ROUTE_LOYALTY_BONUS_PER_POINT,
+  nextRouteLoyalty,
 } from './economy'
 import { computeRouteDemand } from './demand'
-import { advanceFuelMarket, drawFuel, SAF_EMISSIONS_CUT } from './fuel'
+import { advanceFuelMarket, drawFuel, fuelCountryMultiplier, SAF_EMISSIONS_CUT } from './fuel'
 import { CO2_PER_FUEL_TONNE, advanceCO2Market, drawCO2 } from './co2'
 import { runBotTick } from './stockMarket'
 import { updateMilestones } from './milestones'
@@ -54,6 +57,8 @@ export interface DispatchOutcome {
   flight: ActiveFlight
   /** Where the aircraft will be once this flight lands — the opposite of where it just was. */
   homeSide: 'origin' | 'dest'
+  /** The route's loyalty after this dispatch — one tick higher, capped. */
+  routeLoyalty: number
   fuel: FuelState
   co2: CO2State
   cashDelta: number
@@ -89,10 +94,23 @@ export function dispatchOutcome(
 
   const fuelMult = trainingMultiplier(training?.fuel ?? 0)
   const emissionsMult = trainingMultiplier(training?.emissions ?? 0) * (safActive ? SAF_EMISSIONS_CUT : 1)
-  const crewBonus = (training?.crew ?? 0) * CREW_BONUS_PER_LEVEL
+  const loyalty = route.loyalty ?? 0
+  const crewBonus = (training?.crew ?? 0) * CREW_BONUS_PER_LEVEL + loyalty * ROUTE_LOYALTY_BONUS_PER_POINT
 
   const plan = planFlight(model, legs.leg1Km, legs.leg2Km, fuelMult)
-  const drawnFuel = drawFuel(fuel, plan.tonnes)
+
+  // The depot only exists at the route's own two ends. Leg 1 departs from wherever this
+  // dispatch actually starts — the depot if that's the home side, else the local rate for that
+  // country. Leg 2 (the second half of a stopover) always departs from the stopover itself,
+  // which is never home, so it's always bought locally too.
+  const departingFromDepot = flyingFrom === 'origin'
+  const leg1Purchase = departingFromDepot
+    ? drawFuel(fuel, plan.leg1Tonnes)
+    : { fuel, cost: plan.leg1Tonnes * fuel.price * fuelCountryMultiplier(origin.country) }
+  const viaAirport = route.viaCode ? findAirport(route.viaCode) : undefined
+  const leg2Cost =
+    viaAirport && plan.leg2Tonnes > 0 ? plan.leg2Tonnes * fuel.price * fuelCountryMultiplier(viaAirport.country) : 0
+  const drawnFuel = { fuel: leg1Purchase.fuel, cost: leg1Purchase.cost + leg2Cost }
   const effectiveFuelPrice = plan.tonnes > 0 ? drawnFuel.cost / plan.tonnes : fuel.price
   const drawnCO2 = drawCO2(co2, plan.tonnes * CO2_PER_FUEL_TONNE * emissionsMult)
   const stopoverFee = route.viaCode ? STOPOVER_FEE[model.category] : 0
@@ -110,12 +128,21 @@ export function dispatchOutcome(
     crewBonus,
   )
 
-  const fee = aircraft.autoManaged ? managerFee(result.revenue) : 0
-  const rmFee = revenueCut * result.revenue
-  const netProfit = result.profit - fee - rmFee - drawnCO2.cost - stopoverFee
+  const cargoRev = cargoRevenueForFlight(model.category, origin.weight, dest.weight, plan.distanceKm)
+  const totalRevenue = result.revenue + cargoRev
+  const fee = aircraft.autoManaged ? managerFee(totalRevenue) : 0
+  const rmFee = revenueCut * totalRevenue
+  const netProfit = result.profit + cargoRev - fee - rmFee - drawnCO2.cost - stopoverFee
   const id = nextEventId()
   const auto = aircraft.autoManaged ? ` (auto · gerente −${Math.round(fee).toLocaleString('en-US')})` : ''
   const via = route.viaCode ? `${route.viaCode}→` : ''
+  const localFuelCountries = [
+    ...new Set([
+      ...(departingFromDepot ? [] : [origin.country]),
+      ...(viaAirport && plan.leg2Tonnes > 0 ? [viaAirport.country] : []),
+    ]),
+  ]
+  const localFuelNote = localFuelCountries.length > 0 ? ` · combustível local (${localFuelCountries.join(', ')})` : ''
 
   return {
     flight: {
@@ -128,8 +155,11 @@ export function dispatchOutcome(
       passengers: result.passengers,
       loadFactor: result.loadFactor,
       profit: Math.round(netProfit),
+      cargoRevenue: Math.round(cargoRev),
+      localFuelCountries: localFuelCountries.length > 0 ? localFuelCountries : undefined,
     },
     homeSide: nextHomeSide,
+    routeLoyalty: nextRouteLoyalty(loyalty),
     fuel: drawnFuel.fuel,
     co2: drawnCO2.co2,
     cashDelta: netProfit,
@@ -137,7 +167,7 @@ export function dispatchOutcome(
     ledger: {
       id,
       t: now,
-      label: `Voo ${origin.code}→${via}${dest.code}: ${result.passengers} pax, ${Math.round(result.loadFactor * 100)}% ocupação${auto}`,
+      label: `Voo ${origin.code}→${via}${dest.code}: ${result.passengers} pax, ${Math.round(result.loadFactor * 100)}% ocupação, +$${Math.round(cargoRev).toLocaleString('en-US')} carga${auto}${localFuelNote}`,
       amount: Math.round(netProfit),
     },
     landing: {
@@ -165,6 +195,7 @@ function nextAircraftEventAt(aircraft: OwnedAircraft): number | null {
 
 interface FleetAdvanceResult {
   fleet: OwnedAircraft[]
+  routes: Route[]
   fuel: FuelState
   co2: CO2State
   cash: number
@@ -191,6 +222,7 @@ function advanceFleetTo(
   safActive: boolean,
 ): FleetAdvanceResult {
   let working = fleet
+  let workingRoutes = routes
   const landings: FlightLanding[] = []
   let autoFlights = 0
   let autoProfit = 0
@@ -233,11 +265,11 @@ function advanceFleetTo(
     }
 
     if (updated.autoManaged && updated.hoursSinceCheck < CHECK_INTERVAL_HOURS) {
-      const route = routes.find((r) => r.aircraftId === updated.id)
+      const route = workingRoutes.find((r) => r.aircraftId === updated.id)
       const outcome = route
         ? dispatchOutcome(updated, route, fuel, co2, reputation, pickTime, revenueCut, training, safActive)
         : null
-      if (outcome) {
+      if (outcome && route) {
         fuel = outcome.fuel
         co2 = outcome.co2
         cash += outcome.cashDelta
@@ -246,6 +278,7 @@ function advanceFleetTo(
         autoFlights += 1
         autoProfit += outcome.cashDelta
         updated = { ...updated, status: 'flying', flight: outcome.flight, homeSide: outcome.homeSide }
+        workingRoutes = workingRoutes.map((r) => (r.id === route.id ? { ...r, loyalty: outcome.routeLoyalty } : r))
       }
     }
 
@@ -262,7 +295,7 @@ function advanceFleetTo(
     })
   }
 
-  return { fleet: working, fuel, co2, cash, reputation, flightsCompleted, ledger, landings }
+  return { fleet: working, routes: workingRoutes, fuel, co2, cash, reputation, flightsCompleted, ledger, landings }
 }
 
 export function tick(state: GameState): TickResult {
@@ -391,6 +424,7 @@ export function tick(state: GameState): TickResult {
     reputation = clamp(reputation + outcome.reputationDelta, 0, 100)
     ledger.push(outcome.ledger)
     landings.push(outcome.landing)
+    routes = routes.map((r) => (r.id === route.id ? { ...r, loyalty: outcome.routeLoyalty } : r))
     return { ...aircraft, status: 'flying', flight: outcome.flight, homeSide: outcome.homeSide }
   })
 
@@ -452,6 +486,7 @@ export function catchUp(state: GameState): TickResult {
   const withAdvance: GameState = {
     ...state,
     fleet: advanced.fleet,
+    routes: advanced.routes,
     fuel: advanced.fuel,
     co2: advanced.co2,
     cash: advanced.cash,
