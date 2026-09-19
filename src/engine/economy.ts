@@ -40,6 +40,29 @@ export function leaseCostPerHour(modelPrice: number): number {
   return modelPrice * LEASE_RATE
 }
 
+/** Lessors underwrite the airline, not just the airframe — a new operator can't just walk in and
+ *  lease a widebody with no track record. Buying is already gated by cash (a new airline can't
+ *  afford a $130M A380 outright); this is leasing's equivalent gate, earned through flights
+ *  completed and reputation instead of capital. */
+export interface LeaseRequirement {
+  minFlights: number
+  minReputation: number
+}
+
+export function leaseRequirement(category: AircraftCategory): LeaseRequirement {
+  const table: Record<AircraftCategory, LeaseRequirement> = {
+    regional: { minFlights: 0, minReputation: 0 },
+    narrowbody: { minFlights: 15, minReputation: 55 },
+    widebody: { minFlights: 60, minReputation: 70 },
+  }
+  return table[category]
+}
+
+export function canLeaseAircraft(category: AircraftCategory, flightsCompleted: number, reputation: number): boolean {
+  const req = leaseRequirement(category)
+  return flightsCompleted >= req.minFlights && reputation >= req.minReputation
+}
+
 /** What a used aircraft fetches: starts at 70% of list, dropping with hours flown and wear. */
 export function resaleValue(modelPrice: number, totalHours: number, wear: number): number {
   const hoursFactor = 1 - Math.min(0.45, totalHours / 3000)

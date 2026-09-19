@@ -11,6 +11,7 @@ import {
   recommendedCabin,
   resaleValue,
   leaseCostPerHour,
+  leaseRequirement,
 } from '../engine/economy'
 import type { AircraftModel, GameState, SeatClass, SeatConfig, TutorialStep } from '../types'
 import { Field } from './Field'
@@ -170,12 +171,18 @@ export function MarketPanel({ state, tutorial }: { state: GameState; tutorial?: 
                   </button>
                 )
               })()}
-              <button
-                title="Entrada mais barata, mas custa mais no total com o tempo — e não sobra nada pra vender no fim"
-                onClick={() => leaseAircraft(m.id)}
-              >
-                Arrendar (só econômica) · {formatMoney(leaseCostPerHour(m.price) * 24)}/dia
-              </button>
+              {(() => {
+                const req = leaseRequirement(m.category)
+                const eligible = state.flightsCompleted >= req.minFlights && state.company.reputation >= req.minReputation
+                const title = eligible
+                  ? 'Entrada mais barata, mas custa mais no total com o tempo — e não sobra nada pra vender no fim'
+                  : `Nenhuma arrendadora fecha essa categoria sem histórico: precisa de ${req.minFlights} voos completados e reputação ${req.minReputation} (hoje: ${state.flightsCompleted} voos, reputação ${Math.round(state.company.reputation)})`
+                return (
+                  <button disabled={!eligible} title={title} onClick={() => leaseAircraft(m.id)}>
+                    Arrendar (só econômica) · {formatMoney(leaseCostPerHour(m.price) * 24)}/dia
+                  </button>
+                )
+              })()}
               <button onClick={() => setConfiguringId(configuringId === m.id ? null : m.id)}>
                 Configurar cabine
               </button>

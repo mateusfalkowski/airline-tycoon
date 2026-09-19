@@ -12,6 +12,7 @@ import {
   MANAGER_HIRE_FEE,
   MANAGER_UNLOCK_FLIGHTS,
   checkIntervalHours,
+  canLeaseAircraft,
   maintenanceHours,
   inspectionCost,
   lightMaintenanceCost,
@@ -211,6 +212,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const state = get().state
     const model = findAircraftModel(modelId)
     if (!state || !model) return
+    if (!canLeaseAircraft(model.category, state.flightsCompleted, state.company.reputation)) return
 
     const config = seatConfig ?? allEconomyConfig(model.seats)
     if (seatUnitsUsed(config) > model.seats) return
