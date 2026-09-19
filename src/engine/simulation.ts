@@ -21,7 +21,7 @@ import {
   leaseCostPerHour,
   retunePrice,
   LOAN_DAILY_RATE,
-  WEAR_PER_HOUR,
+  wearPerHour,
   checkIntervalHours,
   REVENUE_TEAM_CUT,
   REVENUE_TUNE_INTERVAL_MS,
@@ -292,12 +292,13 @@ function advanceFleetTo(
 
     // Flight arrival — apply the physical toll and free the aircraft.
     const h = aircraft.flight!.hours
+    const model = findAircraftModel(aircraft.modelId)
     flightsCompleted += 1
     let updated: OwnedAircraft = {
       ...aircraft,
       status: 'idle' as const,
       flight: undefined,
-      wear: clamp(aircraft.wear + h * WEAR_PER_HOUR * wearMult, 0, 1),
+      wear: clamp(aircraft.wear + h * (model ? wearPerHour(model.category) : 0) * wearMult, 0, 1),
       hoursSinceCheck: aircraft.hoursSinceCheck + h,
       totalHours: aircraft.totalHours + h,
     }
@@ -308,7 +309,6 @@ function advanceFleetTo(
       cash = applied.cash
       if (applied.ledgerEntry) scheduledMaintenanceLedger.push(applied.ledgerEntry)
     } else {
-      const model = findAircraftModel(updated.modelId)
       if (updated.autoManaged && model && updated.hoursSinceCheck < checkIntervalHours(model.category)) {
         const route = workingRoutes.find((r) => r.aircraftId === updated.id)
         const outcome = route
@@ -457,12 +457,13 @@ export function tick(state: GameState): TickResult {
 
     // Flight arrived — money was settled at dispatch; apply the physical toll and free the aircraft.
     const h = aircraft.flight.hours
+    const model = findAircraftModel(aircraft.modelId)
     flightsCompleted += 1
     const landed: OwnedAircraft = {
       ...aircraft,
       status: 'idle' as const,
       flight: undefined,
-      wear: clamp(aircraft.wear + h * WEAR_PER_HOUR * wearMult, 0, 1),
+      wear: clamp(aircraft.wear + h * (model ? wearPerHour(model.category) : 0) * wearMult, 0, 1),
       hoursSinceCheck: aircraft.hoursSinceCheck + h,
       totalHours: aircraft.totalHours + h,
     }

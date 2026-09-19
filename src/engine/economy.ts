@@ -156,9 +156,6 @@ export function retunePrice(
   return Math.round(clamp(next, fair * 0.5, fair * 2.4))
 }
 
-/** Aircraft wear & scheduled inspections. */
-export const WEAR_PER_HOUR = 0.011
-
 /** Flight hours between mandatory inspections — the A-check analog. Real A-check intervals run
  *  roughly 250-750 flight hours depending on type (e.g. ~250h on a 737 Classic, ~750h on an A320);
  *  smaller airframes with shorter, more frequent hops tend to sit at the low end. */
@@ -169,6 +166,15 @@ export function checkIntervalHours(category: AircraftCategory): number {
     widebody: 600,
   }
   return table[category]
+}
+
+/** Aircraft wear per flight hour: ramps up to fully worn (1.0, capped) at about 60% of the
+ *  category's inspection interval, then sits pinned at the cap for the rest — a stretch of
+ *  expensive-but-still-flyable operation (wear drives the per-flight maintenance-cost multiplier)
+ *  that rewards proactive light maintenance instead of just waiting out the mandatory inspection.
+ *  Tied to checkIntervalHours so a longer interval doesn't leave wear maxed out for most of it. */
+export function wearPerHour(category: AircraftCategory): number {
+  return 1 / (checkIntervalHours(category) * 0.6)
 }
 
 /** How long an aircraft is grounded for maintenance (real hours) — bigger jets take longer.
