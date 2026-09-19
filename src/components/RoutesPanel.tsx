@@ -56,6 +56,8 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
   const managersUsed = state.fleet.filter((a) => a.autoManaged).length
   const managerLimit = managerCap(state.flightsCompleted)
   const managerUnlocked = state.flightsCompleted >= MANAGER_UNLOCK_FLIGHTS
+  const nextManagerSlotAt = (Math.floor(state.flightsCompleted / 20) + 1) * 20
+  const flightsUntilNextManagerSlot = nextManagerSlotAt - state.flightsCompleted
 
   const fixedPerDay = state.fleet.reduce((s, ac) => {
     const m = findAircraftModel(ac.modelId)
@@ -243,8 +245,9 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
                         {MANAGER_UNLOCK_FLIGHTS})
                       </button>
                     ) : managersUsed >= managerLimit ? (
-                      <button style={{ fontSize: 12 }} disabled>
-                        🤖 Limite de gerentes ({managersUsed}/{managerLimit})
+                      <button style={{ fontSize: 12 }} disabled title={`Mais uma vaga em ${flightsUntilNextManagerSlot} voos`}>
+                        🤖 Limite de gerentes ({managersUsed}/{managerLimit}) · +1 vaga em {flightsUntilNextManagerSlot}{' '}
+                        voos
                       </button>
                     ) : (
                       <button style={{ fontSize: 12 }} onClick={() => setExplainManager(aircraft.id)}>
@@ -277,7 +280,10 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
                         <li>Contratação: <strong style={{ color: 'var(--text-h)' }}>{formatMoney(MANAGER_HIRE_FEE)}</strong> (uma vez, sem reembolso)</li>
                         <li>Por voo automático: <strong style={{ color: 'var(--text-h)' }}>$1.000 + 4% da receita</strong>, tirado do lucro do voo</li>
                         <li>Despachar manualmente rende mais — a automação é conveniência paga</li>
-                        <li>Gerentes disponíveis: {managersUsed}/{managerLimit}</li>
+                        <li>
+                          Gerentes disponíveis: {managersUsed}/{managerLimit}
+                          {managersUsed >= managerLimit && ` · +1 vaga em ${flightsUntilNextManagerSlot} voos`}
+                        </li>
                       </ul>
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button
