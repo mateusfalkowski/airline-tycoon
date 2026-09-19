@@ -92,6 +92,7 @@ interface GameStore {
   init: () => void
   createCompany: (name: string, hubCode: string) => void
   buyAircraft: (modelId: string, seatConfig?: SeatConfig) => void
+  leaseAircraft: (modelId: string, seatConfig?: SeatConfig) => void
   sellAircraft: (aircraftId: string) => void
   createRoute: (
     originCode: string,
@@ -205,6 +206,46 @@ export const useGameStore = create<GameStore>((set, get) => ({
     persist(next)
   },
 
+  leaseAircraft: (modelId, seatConfig) => {
+    const state = get().state
+    const model = findAircraftModel(modelId)
+    if (!state || !model) return
+
+    const config = seatConfig ?? allEconomyConfig(model.seats)
+    if (seatUnitsUsed(config) > model.seats) return
+
+    const upfitCost = cabinUpfitCost(config)
+    if (state.cash < upfitCost) return
+
+    const aircraft: OwnedAircraft = {
+      id: `ac-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      modelId,
+      status: 'idle',
+      seatConfig: config,
+      wear: 0,
+      hoursSinceCheck: 0,
+      totalHours: 0,
+      leased: true,
+    }
+    const next: GameState = {
+      ...state,
+      cash: state.cash - upfitCost,
+      fleet: [...state.fleet, aircraft],
+      ledger: [
+        {
+          id: `evt-lease-${aircraft.id}`,
+          t: Date.now(),
+          label: `Arrendou ${model.name}${upfitCost > 0 ? ' (cabine paga à vista)' : ''}`,
+          amount: -upfitCost,
+        },
+        ...state.ledger,
+      ].slice(0, 100),
+      tutorial: state.tutorial === 'buy_aircraft' ? 'create_route' : state.tutorial,
+    }
+    set({ state: next })
+    persist(next)
+  },
+
   sellAircraft: (aircraftId) => {
     const state = get().state
     if (!state) return
@@ -212,7 +253,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!aircraft || aircraft.status !== 'idle') return
     const model = findAircraftModel(aircraft.modelId)
     if (!model) return
-    const value = resaleValue(model.price, aircraft.totalHours, aircraft.wear)
+    const value = aircraft.leased ? 0 : resaleValue(model.price, aircraft.totalHours, aircraft.wear)
     const now = Date.now()
     const next: GameState = {
       ...state,
@@ -220,7 +261,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
       fleet: state.fleet.filter((a) => a.id !== aircraftId),
       routes: state.routes.filter((r) => r.aircraftId !== aircraftId),
       ledger: [
-        { id: `evt-sell-${now}`, t: now, label: `Vendeu ${model.name} (usado)`, amount: value },
+        {
+          id: `evt-sell-${now}`,
+          t: now,
+          label: aircraft.leased ? `Devolveu ${model.name} arrendado` : `Vendeu ${model.name} (usado)`,
+          amount: value,
+        },
         ...state.ledger,
       ].slice(0, 100),
     }

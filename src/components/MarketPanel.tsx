@@ -10,6 +10,7 @@ import {
   cabinUpfitCost,
   recommendedCabin,
   resaleValue,
+  leaseCostPerHour,
 } from '../engine/economy'
 import type { AircraftModel, GameState, SeatClass, SeatConfig, TutorialStep } from '../types'
 import { Field } from './Field'
@@ -30,6 +31,7 @@ const CLASS_LABEL: Record<SeatClass, string> = {
 
 export function MarketPanel({ state, tutorial }: { state: GameState; tutorial?: TutorialStep }) {
   const buyAircraft = useGameStore((s) => s.buyAircraft)
+  const leaseAircraft = useGameStore((s) => s.leaseAircraft)
   const sellAircraft = useGameStore((s) => s.sellAircraft)
   const highlightBuy = tutorial === 'buy_aircraft'
   const [configuringId, setConfiguringId] = useState<string | null>(null)
@@ -43,7 +45,7 @@ export function MarketPanel({ state, tutorial }: { state: GameState; tutorial?: 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {state.fleet.map((ac) => {
               const m = findAircraftModel(ac.modelId)
-              const value = m ? resaleValue(m.price, ac.totalHours, ac.wear) : 0
+              const value = ac.leased || !m ? 0 : resaleValue(m.price, ac.totalHours, ac.wear)
               const canSell = ac.status === 'idle'
               return (
                 <div
@@ -60,6 +62,11 @@ export function MarketPanel({ state, tutorial }: { state: GameState; tutorial?: 
                   }}
                 >
                   <strong style={{ color: 'var(--text-h)', fontSize: 13.5 }}>{m?.name ?? ac.modelId}</strong>
+                  {ac.leased && (
+                    <span className="badge" style={{ color: 'var(--gold)', borderColor: 'var(--gold)' }}>
+                      arrendado
+                    </span>
+                  )}
                   <span className="stat-chip">
                     {ac.totalHours.toFixed(0)}h · desgaste {Math.round(ac.wear * 100)}%
                   </span>
@@ -68,7 +75,9 @@ export function MarketPanel({ state, tutorial }: { state: GameState; tutorial?: 
                   </span>
                   {confirmSellId === ac.id ? (
                     <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <span style={{ fontSize: 11, color: 'var(--red)' }}>Vender e remover a rota?</span>
+                      <span style={{ fontSize: 11, color: 'var(--red)' }}>
+                        {ac.leased ? 'Devolver e remover a rota?' : 'Vender e remover a rota?'}
+                      </span>
                       <button
                         style={{ fontSize: 12, borderColor: 'var(--red)' }}
                         onClick={() => {
@@ -76,7 +85,7 @@ export function MarketPanel({ state, tutorial }: { state: GameState; tutorial?: 
                           setConfirmSellId(null)
                         }}
                       >
-                        Confirmar · {formatMoney(value)}
+                        Confirmar{value > 0 ? ` · ${formatMoney(value)}` : ''}
                       </button>
                       <button style={{ fontSize: 12 }} onClick={() => setConfirmSellId(null)}>
                         Não
@@ -89,7 +98,7 @@ export function MarketPanel({ state, tutorial }: { state: GameState; tutorial?: 
                       title={!canSell ? 'A aeronave precisa estar em solo' : undefined}
                       onClick={() => setConfirmSellId(ac.id)}
                     >
-                      Vender · {formatMoney(value)}
+                      {ac.leased ? 'Devolver' : `Vender · ${formatMoney(value)}`}
                     </button>
                   )}
                 </div>
@@ -161,6 +170,12 @@ export function MarketPanel({ state, tutorial }: { state: GameState; tutorial?: 
                   </button>
                 )
               })()}
+              <button
+                title="Entrada mais barata, mas custa mais no total com o tempo — e não sobra nada pra vender no fim"
+                onClick={() => leaseAircraft(m.id)}
+              >
+                Arrendar (só econômica) · {formatMoney(leaseCostPerHour(m.price) * 24)}/dia
+              </button>
               <button onClick={() => setConfiguringId(configuringId === m.id ? null : m.id)}>
                 Configurar cabine
               </button>

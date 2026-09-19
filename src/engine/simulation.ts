@@ -18,6 +18,7 @@ import {
   managerFee,
   realFlightMs,
   fixedCostPerHour,
+  leaseCostPerHour,
   retunePrice,
   LOAN_DAILY_RATE,
   WEAR_PER_HOUR,
@@ -314,12 +315,17 @@ export function tick(state: GameState): TickResult {
     const m = findAircraftModel(ac.modelId)
     return sum + (m ? fixedCostPerHour(m.price) : 0)
   }, 0)
+  const leasePerHour = state.fleet.reduce((sum, ac) => {
+    if (!ac.leased) return sum
+    const m = findAircraftModel(ac.modelId)
+    return sum + (m ? leaseCostPerHour(m.price) : 0)
+  }, 0)
   const upkeepHours = Math.min(72, Math.max(0, (now - state.lastSeen) / 3_600_000))
   const interestPerHour = (state.debt * LOAN_DAILY_RATE) / 24
-  cash -= (fixedPerHour + interestPerHour) * upkeepHours
+  cash -= (fixedPerHour + leasePerHour + interestPerHour) * upkeepHours
 
   let lastFixedLogAt = state.lastFixedLogAt
-  if (now - lastFixedLogAt >= 3_600_000 && (fixedPerHour > 0 || interestPerHour > 0)) {
+  if (now - lastFixedLogAt >= 3_600_000 && (fixedPerHour > 0 || leasePerHour > 0 || interestPerHour > 0)) {
     const loggedHours = Math.min(72, (now - lastFixedLogAt) / 3_600_000)
     if (fixedPerHour > 0)
       ledger.push({
@@ -327,6 +333,13 @@ export function tick(state: GameState): TickResult {
         t: now,
         label: 'Custos fixos da frota (pátio, seguro, equipe base)',
         amount: -Math.round(fixedPerHour * loggedHours),
+      })
+    if (leasePerHour > 0)
+      ledger.push({
+        id: nextEventId(),
+        t: now,
+        label: 'Arrendamento de aeronaves',
+        amount: -Math.round(leasePerHour * loggedHours),
       })
     if (interestPerHour > 0)
       ledger.push({

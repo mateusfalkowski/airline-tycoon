@@ -32,6 +32,14 @@ export function fixedCostPerHour(modelPrice: number): number {
   return modelPrice * FIXED_COST_RATE
 }
 
+/** Leasing: skip the purchase price for a higher ongoing cost — cheaper to start, pricier over
+ *  the long run, and there's no airframe to sell at the end since you never owned it. */
+export const LEASE_RATE = 0.00003
+
+export function leaseCostPerHour(modelPrice: number): number {
+  return modelPrice * LEASE_RATE
+}
+
 /** What a used aircraft fetches: starts at 70% of list, dropping with hours flown and wear. */
 export function resaleValue(modelPrice: number, totalHours: number, wear: number): number {
   const hoursFactor = 1 - Math.min(0.45, totalHours / 3000)

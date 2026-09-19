@@ -65,6 +65,9 @@ export interface OwnedAircraft {
    *  it actually flies out and back instead of repeating the same leg. Missing means 'origin'. */
   homeSide?: 'origin' | 'dest'
   autoManaged?: boolean
+  /** Leased rather than bought outright — cheaper up front, an ongoing lease cost instead, and
+   *  nothing to sell when you're done with it. */
+  leased?: boolean
   /** Airframe wear, 0 (new) to 1 (worn out). */
   wear: number
   /** Flight-hours flown since the last scheduled inspection. */
