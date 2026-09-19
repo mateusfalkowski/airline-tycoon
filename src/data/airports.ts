@@ -10,6 +10,10 @@ export const AIRPORTS: Airport[] = [
   { code: 'CWB', name: 'Afonso Pena', city: 'Curitiba', country: 'Brasil', lat: -25.5285, lon: -49.1758, weight: 45 },
   { code: 'SSA', name: 'Deputado Luís Eduardo Magalhães', city: 'Salvador', country: 'Brasil', lat: -12.9086, lon: -38.3225, weight: 40 },
   { code: 'REC', name: 'Guararapes', city: 'Recife', country: 'Brasil', lat: -8.1264, lon: -34.9236, weight: 40 },
+  { code: 'FOR', name: 'Pinto Martins Intl', city: 'Fortaleza', country: 'Brasil', lat: -3.7763, lon: -38.5326, weight: 40 },
+  { code: 'BEL', name: 'Val de Cans Intl', city: 'Belém', country: 'Brasil', lat: -1.3792, lon: -48.4761, weight: 35 },
+  { code: 'MAO', name: 'Eduardo Gomes Intl', city: 'Manaus', country: 'Brasil', lat: -3.0386, lon: -60.0497, weight: 50 },
+  { code: 'PVH', name: 'Gov. Jorge Teixeira Intl', city: 'Porto Velho', country: 'Brasil', lat: -8.7093, lon: -63.9024, weight: 30 },
   { code: 'MIA', name: 'Miami Intl', city: 'Miami', country: 'EUA', lat: 25.7959, lon: -80.2870, weight: 85 },
   { code: 'JFK', name: 'John F. Kennedy Intl', city: 'Nova York', country: 'EUA', lat: 40.6413, lon: -73.7781, weight: 100 },
   { code: 'LAX', name: 'Los Angeles Intl', city: 'Los Angeles', country: 'EUA', lat: 33.9416, lon: -118.4085, weight: 95 },
@@ -17,6 +21,8 @@ export const AIRPORTS: Airport[] = [
   { code: 'MEX', name: 'Cidade do México Intl', city: 'Cidade do México', country: 'México', lat: 19.4363, lon: -99.0721, weight: 85 },
   { code: 'PTY', name: 'Tocumen Intl', city: 'Cidade do Panamá', country: 'Panamá', lat: 9.0714, lon: -79.3835, weight: 65 },
   { code: 'BOG', name: 'El Dorado Intl', city: 'Bogotá', country: 'Colômbia', lat: 4.7016, lon: -74.1469, weight: 55 },
+  { code: 'CCS', name: 'Simón Bolívar Intl', city: 'Caracas', country: 'Venezuela', lat: 10.6013, lon: -66.9911, weight: 45 },
+  { code: 'UIO', name: 'Mariscal Sucre Intl', city: 'Quito', country: 'Equador', lat: -0.1292, lon: -78.3575, weight: 40 },
   { code: 'LIM', name: 'Jorge Chávez Intl', city: 'Lima', country: 'Peru', lat: -12.0219, lon: -77.1143, weight: 55 },
   { code: 'SCL', name: 'Arturo Merino Benítez', city: 'Santiago', country: 'Chile', lat: -33.3930, lon: -70.7858, weight: 55 },
   { code: 'EZE', name: 'Ministro Pistarini', city: 'Buenos Aires', country: 'Argentina', lat: -34.8222, lon: -58.5358, weight: 65 },
@@ -70,4 +76,17 @@ export function routeLegsKm(originCode: string, destCode: string, viaCode?: stri
   const leg1Km = distanceKm(origin, via)
   const leg2Km = distanceKm(via, dest)
   return { leg1Km, leg2Km, totalKm: leg1Km + leg2Km }
+}
+
+/** Whether an aircraft with this range can get from origin to dest at all — directly, or with
+ *  a single stopover at some other airport where both legs fit within range. */
+export function isRouteReachable(originCode: string, destCode: string, rangeKm: number): boolean {
+  const origin = findAirport(originCode)
+  const dest = findAirport(destCode)
+  if (!origin || !dest) return false
+  if (distanceKm(origin, dest) <= rangeKm) return true
+  return AIRPORTS.some((via) => {
+    if (via.code === originCode || via.code === destCode) return false
+    return distanceKm(origin, via) <= rangeKm && distanceKm(via, dest) <= rangeKm
+  })
 }

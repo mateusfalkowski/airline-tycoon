@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { AircraftModel, GameState, Route, SeatClass, TutorialStep } from '../types'
-import { AIRPORTS, findAirport, routeLegsKm } from '../data/airports'
+import { AIRPORTS, findAirport, routeLegsKm, isRouteReachable } from '../data/airports'
 import { findAircraftModel } from '../data/aircraft'
 import { distanceKm } from '../engine/geo'
 import {
@@ -384,6 +384,7 @@ function RouteForm({
     const a = findAirport(code)
     return !!originAirport && !!a && distanceKm(originAirport, a) <= model.rangeKm
   }
+  const reachable = (code: string): boolean => inRange(code) || isRouteReachable(origin, code, model.rangeKm)
   const outOfRange = directOutOfRange && !effectiveVia
 
   const [prices, setPrices] = useState<Record<SeatClass, number>>(() => {
@@ -433,9 +434,9 @@ function RouteForm({
             }}
           >
             {AIRPORTS.filter((a) => a.code !== origin).map((a) => (
-              <option key={a.code} value={a.code}>
+              <option key={a.code} value={a.code} disabled={!reachable(a.code)}>
                 {a.code} — {a.city}
-                {inRange(a.code) ? '' : ' (precisa de escala)'}
+                {inRange(a.code) ? '' : reachable(a.code) ? ' (precisa de escala)' : ' (fora de alcance)'}
               </option>
             ))}
           </select>

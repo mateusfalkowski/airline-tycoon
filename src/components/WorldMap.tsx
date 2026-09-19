@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, type PointerEvent, type WheelEvent } from 'react'
 import type { GameState, SeatClass } from '../types'
-import { AIRPORTS, findAirport, routeLegsKm } from '../data/airports'
+import { AIRPORTS, findAirport, routeLegsKm, isRouteReachable } from '../data/airports'
 import { findAircraftModel } from '../data/aircraft'
 import { distanceKm, interpolateGreatCircle } from '../engine/geo'
 import { computeRouteDemand, seasonalMultiplier } from '../engine/demand'
@@ -203,6 +203,10 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
     return !!a && distanceKm(originAp, a) <= builderModel.rangeKm
   }
   const needsVia = building && !!pickDest && !inRange(pickDest)
+  const destReachable = (code: string): boolean => {
+    if (!builderModel || !originAp) return true
+    return inRange(code) || isRouteReachable(originAp.code, code, builderModel.rangeKm)
+  }
   const viaEligible = (code: string): boolean => {
     if (!builderModel || !originAp || !pickDest) return false
     if (code === pickOrigin || code === pickDest) return false
@@ -220,7 +224,7 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
       return
     }
     if (!pickDest) {
-      if (code === pickOrigin) return
+      if (code === pickOrigin || !destReachable(code)) return
       const dst = findAirport(code)!
       const dist = distanceKm(originAp!, dst)
       const init = {} as Record<SeatClass, number>
@@ -525,8 +529,14 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
             const isOrigin = building && pickOrigin === a.code
             const isDest = building && pickDest === a.code
             const isVia = building && pickVia === a.code
+            const isHovered = hoverAirport === a.code
             const disabled =
-              building && !!pickDest && needsVia && a.code !== pickOrigin && a.code !== pickDest && !viaEligible(a.code)
+              (building && !!pickOrigin && !pickDest && a.code !== pickOrigin && !destReachable(a.code)) ||
+              (building && !!pickDest && needsVia && a.code !== pickOrigin && a.code !== pickDest && !viaEligible(a.code))
+            // Most airports sit out as a quiet dot — only the ones actually in play (hub, a
+            // builder pick, a search match, or hovered) earn the full pin. 48 airports' worth of
+            // pins on screen at once was too busy.
+            const highlighted = isHub || isOrigin || isDest || isVia || isHovered || (on && !!q)
             let fill = isHub ? '#ffd24a' : '#eaf1fb'
             if (isOrigin) fill = '#7fe0a8'
             if (isDest) fill = '#4cc6fb'
@@ -541,28 +551,32 @@ export function WorldMap({ state, now }: { state: GameState; now: number }) {
                 onClick={() => onAirportClick(a.code)}
                 style={{ cursor: building && !disabled ? 'pointer' : 'default' }}
               >
-                {/* Generous invisible hit area — much bigger than the pin itself so it's easy to click. */}
+                {/* Generous invisible hit area — much bigger than the marker itself so it's easy to click. */}
                 <circle cx={0} cy={-9} r={13} fill="transparent" />
-                <g transform={big ? 'scale(1.25)' : undefined} opacity={disabled ? 0.15 : on ? 1 : 0.22}>
-                  <path
-                    d="M0 0 L-5.5 -11.5 A6.5 6.5 0 1 1 5.5 -11.5 Z"
-                    fill={fill}
-                    stroke="#0a1424"
-                    strokeWidth="0.8"
-                  />
-                  <circle cx={0} cy={-11.5} r={2.6} fill="#0a1424" />
-                </g>
+                {highlighted ? (
+                  <g transform={big ? 'scale(1.25)' : undefined} opacity={disabled ? 0.15 : 1}>
+                    <path
+                      d="M0 0 L-5.5 -11.5 A6.5 6.5 0 1 1 5.5 -11.5 Z"
+                      fill={fill}
+                      stroke="#0a1424"
+                      strokeWidth="0.8"
+                    />
+                    <circle cx={0} cy={-11.5} r={2.6} fill="#0a1424" />
+                  </g>
+                ) : (
+                  <circle cx={0} cy={0} r={2.1} fill="#eaf1fb" opacity={disabled ? 0.12 : 0.4} />
+                )}
                 {(isOrigin || isDest || isVia) && (
                   <circle cx={0} cy={-11.5} r={9} fill="none" stroke={fill} strokeWidth="1.5" />
                 )}
                 {isHub && !isOrigin && !isDest && (
-                  <circle cx={0} cy={-11.5} r={8.5} fill="none" stroke="#ffd24a" strokeWidth="1" opacity={on ? 0.8 : 0.2} />
+                  <circle cx={0} cy={-11.5} r={8.5} fill="none" stroke="#ffd24a" strokeWidth="1" opacity={0.8} />
                 )}
-                {(on && q) || hoverAirport === a.code || isOrigin || isDest || isVia ? (
+                {highlighted && (
                   <text x={9} y={-9} fontSize="8.5" fill="#fff" stroke="#0a1424" strokeWidth="2.4" paintOrder="stroke">
                     {a.code}
                   </text>
-                ) : null}
+                )}
               </g>
             )
           })}

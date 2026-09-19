@@ -127,6 +127,8 @@ export const FUEL_COUNTRY_MULTIPLIER: Record<string, number> = {
   Índia: 1.1,
   Tailândia: 1.0,
   'Hong Kong': 0.9,
+  Venezuela: 0.6,
+  Equador: 0.95,
 }
 
 export function fuelCountryMultiplier(country: string): number {
