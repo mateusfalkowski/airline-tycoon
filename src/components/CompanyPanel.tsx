@@ -10,6 +10,7 @@ import {
   REVENUE_TEAM_HIRE_FEE,
   REVENUE_TEAM_UNLOCK_FLIGHTS,
   LOAN_DAILY_RATE,
+  LOAN_ANNUAL_RATE,
   maxLoan,
   staffBonusCost,
   staffBonusGain,
@@ -273,8 +274,8 @@ export function CompanyPanel({ state, now }: { state: GameState; now: number }) 
       <h3 style={{ fontSize: 15, marginTop: 24 }}>Financiamento</h3>
       <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: -6, maxWidth: 520 }}>
         Um empréstimo antecipa caixa para comprar frota antes da hora, mas cobra{' '}
-        <strong style={{ color: 'var(--text-h)' }}>1% ao dia de juros</strong> sobre o saldo devedor, debitado
-        do caixa de forma contínua. O limite é{' '}
+        <strong style={{ color: 'var(--text-h)' }}>{Math.round(LOAN_ANNUAL_RATE * 100)}% ao ano de juros</strong>{' '}
+        sobre o saldo devedor, debitado do caixa de forma contínua. O limite é{' '}
         <strong style={{ color: 'var(--text-h)' }}>60% da avaliação da companhia</strong>. Amortize assim que
         sobrar caixa — a dívida não some sozinha.
       </p>
