@@ -30,6 +30,7 @@ import {
   trainingMultiplier,
   CREW_BONUS_PER_LEVEL,
   cargoRevenueForFlight,
+  codeshareRevenuePerHour,
   ROUTE_LOYALTY_BONUS_PER_POINT,
   nextRouteLoyalty,
   inspectionCost,
@@ -365,12 +366,21 @@ export function tick(state: GameState): TickResult {
     const m = findAircraftModel(ac.modelId)
     return sum + (m ? leaseCostPerHour(m.price) : 0)
   }, 0)
+  const codesharePerHour = state.codeshares.reduce((sum, cs) => {
+    const origin = findAirport(cs.originCode)
+    const dest = findAirport(cs.destCode)
+    return sum + (origin && dest ? codeshareRevenuePerHour(origin.weight, dest.weight, cs.distanceKm) : 0)
+  }, 0)
   const upkeepHours = Math.min(72, Math.max(0, (now - state.lastSeen) / 3_600_000))
   const interestPerHour = (state.debt * LOAN_DAILY_RATE) / 24
   cash -= (fixedPerHour + leasePerHour + interestPerHour) * upkeepHours
+  cash += codesharePerHour * upkeepHours
 
   let lastFixedLogAt = state.lastFixedLogAt
-  if (now - lastFixedLogAt >= 3_600_000 && (fixedPerHour > 0 || leasePerHour > 0 || interestPerHour > 0)) {
+  if (
+    now - lastFixedLogAt >= 3_600_000 &&
+    (fixedPerHour > 0 || leasePerHour > 0 || interestPerHour > 0 || codesharePerHour > 0)
+  ) {
     const loggedHours = Math.min(72, (now - lastFixedLogAt) / 3_600_000)
     if (fixedPerHour > 0)
       ledger.push({
@@ -392,6 +402,13 @@ export function tick(state: GameState): TickResult {
         t: now,
         label: 'Juros da dívida',
         amount: -Math.round(interestPerHour * loggedHours),
+      })
+    if (codesharePerHour > 0)
+      ledger.push({
+        id: nextEventId(),
+        t: now,
+        label: 'Repasse de codeshare',
+        amount: Math.round(codesharePerHour * loggedHours),
       })
     lastFixedLogAt = now
   }

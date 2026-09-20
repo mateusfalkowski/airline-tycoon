@@ -100,6 +100,16 @@ export interface Route {
   loyalty?: number
 }
 
+export interface Codeshare {
+  id: string
+  originCode: string
+  destCode: string
+  distanceKm: number
+  /** Fictional NPC airline actually operating the flights — flavor only. */
+  partnerName: string
+  createdAt: number
+}
+
 export interface PricePoint {
   t: number
   price: number
@@ -176,6 +186,7 @@ export interface GameState {
   co2: CO2State
   fleet: OwnedAircraft[]
   routes: Route[]
+  codeshares: Codeshare[]
   stock: StockState
   ledger: FinanceEvent[]
   lastSeen: number

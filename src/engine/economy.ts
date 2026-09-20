@@ -33,8 +33,11 @@ export function fixedCostPerHour(modelPrice: number): number {
 }
 
 /** Leasing: skip the purchase price for a higher ongoing cost — cheaper to start, pricier over
- *  the long run, and there's no airframe to sell at the end since you never owned it. */
-export const LEASE_RATE = 0.00003
+ *  the long run, and there's no airframe to sell at the end since you never owned it. Real
+ *  monthly lease-rate factors run about 0.55%-0.6% of the aircraft's value for an established
+ *  operator; a newer, smaller airline pays a premium over that, landing around 0.9%/month here. */
+export const LEASE_MONTHLY_RATE = 0.009
+export const LEASE_RATE = LEASE_MONTHLY_RATE / (30 * 24)
 
 export function leaseCostPerHour(modelPrice: number): number {
   return modelPrice * LEASE_RATE
@@ -124,8 +127,12 @@ export function trainingMultiplier(level: number): number {
   return 1 - level * TRAINING_EFFECT_PER_LEVEL
 }
 
-/** Loans: borrow against company value, pay ~1%/day interest on the outstanding balance. */
-export const LOAN_DAILY_RATE = 0.01
+/** Loans: borrow against company value. A young, high-leverage airline is a speculative-grade
+ *  borrower, not a prime one — priced like a distressed-adjacent high-yield loan (real-world
+ *  junk debt commonly runs low-to-high teens APR) rather than the old flat 1%/day (~365%/year),
+ *  which was punitive enough to make borrowing pointless in practice. */
+export const LOAN_ANNUAL_RATE = 0.15
+export const LOAN_DAILY_RATE = LOAN_ANNUAL_RATE / 365
 export const LOAN_VALUATION_LIMIT = 0.6
 
 export function maxLoan(valuation: number, debt: number): number {
@@ -225,6 +232,51 @@ export function cargoRevenueForFlight(
   const fillFactor = clamp(Math.sqrt(originWeight * destWeight) / 100, 0.2, 1)
   const tonnesCarried = capacity * fillFactor
   return tonnesCarried * 1000 * cargoRatePerKg(distanceKm)
+}
+
+/** Codeshare: sell seats on a route a partner airline actually flies, for a cut of the fare —
+ *  passive income with no aircraft, crew, or per-flight management, but a small fraction of what
+ *  operating the route yourself would earn. Gated behind reputation and flight history, same as
+ *  leasing — no NPC airline signs an interline deal with a company that has no track record. */
+export const CODESHARE_RATE = 0.0012
+export const CODESHARE_MIN_FLIGHTS = 10
+export const CODESHARE_MIN_REPUTATION = 55
+
+export const CODESHARE_PARTNERS = [
+  'Rota Sul Linhas Aéreas',
+  'TransHub Airways',
+  'Costa Azul Air',
+  'Vento Norte',
+  'Ponte Aérea Global',
+  'Estrela do Sul Airlines',
+  'Aeroeste',
+  'SkyBridge Connect',
+  'Voa Livre',
+  'Andina Wings',
+]
+
+export function randomCodesharePartner(): string {
+  return CODESHARE_PARTNERS[Math.floor(Math.random() * CODESHARE_PARTNERS.length)]
+}
+
+export function canOpenCodeshare(flightsCompleted: number, reputation: number): boolean {
+  return flightsCompleted >= CODESHARE_MIN_FLIGHTS && reputation >= CODESHARE_MIN_REPUTATION
+}
+
+/** How many simultaneous agreements the company can hold — 0 until eligible, then grows with
+ *  track record, same pace as the manager-slot progression. */
+export function codeshareCap(flightsCompleted: number): number {
+  return flightsCompleted >= CODESHARE_MIN_FLIGHTS ? 1 + Math.floor(flightsCompleted / 25) : 0
+}
+
+/** One-time fee to set up the agreement — scales with the route's own value. */
+export function codeshareSigningFee(distanceKm: number): number {
+  return Math.max(8_000, Math.round(distanceKm * 20))
+}
+
+export function codeshareRevenuePerHour(originWeight: number, destWeight: number, distanceKm: number): number {
+  const marketSize = Math.sqrt(originWeight * destWeight)
+  return marketSize * fairPriceForClass(distanceKm, 'economy') * CODESHARE_RATE
 }
 
 /** Per-route loyalty: repeat customers on a route you keep flying gradually fill it better.

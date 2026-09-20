@@ -16,6 +16,12 @@ import {
   trainingMultiplier,
   ROUTE_LOYALTY_MAX,
   SEAT_CLASSES,
+  canOpenCodeshare,
+  codeshareCap,
+  codeshareSigningFee,
+  codeshareRevenuePerHour,
+  CODESHARE_MIN_FLIGHTS,
+  CODESHARE_MIN_REPUTATION,
 } from '../engine/economy'
 import { computeRouteDemand } from '../engine/demand'
 import { useGameStore } from '../store/gameStore'
@@ -43,9 +49,13 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
   const toggleAutoManage = useGameStore((s) => s.toggleAutoManage)
   const updateRoutePrices = useGameStore((s) => s.updateRoutePrices)
   const deleteRoute = useGameStore((s) => s.deleteRoute)
+  const createCodeshare = useGameStore((s) => s.createCodeshare)
+  const cancelCodeshare = useGameStore((s) => s.cancelCodeshare)
   const [editingAircraft, setEditingAircraft] = useState<string | null>(null)
   const [explainManager, setExplainManager] = useState<string | null>(null)
   const [editingPrices, setEditingPrices] = useState<{ routeId: string; prices: Record<SeatClass, number> } | null>(null)
+  const [newCodeshareOrigin, setNewCodeshareOrigin] = useState(AIRPORTS[0].code)
+  const [newCodeshareDest, setNewCodeshareDest] = useState(AIRPORTS[1].code)
   const highlightDefineRoute = tutorial === 'create_route'
   const highlightDispatch = tutorial === 'dispatch_flight'
 
@@ -340,6 +350,132 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
             </div>
           )
         })}
+      </div>
+
+      <div style={{ marginTop: 26 }}>
+        <h3>Codeshare</h3>
+        <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: -8, marginBottom: 14 }}>
+          Venda assentos numa rota que uma parceira NPC realmente voa — renda passiva, sem aeronave, sem
+          tripulação, sem voo pra gerenciar. Só uma fração do que operar a rota você mesmo renderia.
+        </p>
+
+        {!canOpenCodeshare(state.flightsCompleted, state.company.reputation) ? (
+          <p style={{ color: 'var(--text-dim)', fontSize: 12 }}>
+            Nenhuma parceira fecha acordo sem histórico: precisa de {CODESHARE_MIN_FLIGHTS} voos completados e
+            reputação {CODESHARE_MIN_REPUTATION} (hoje: {state.flightsCompleted} voos, reputação{' '}
+            {Math.round(state.company.reputation)}).
+          </p>
+        ) : (
+          <>
+            {state.codeshares.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+                {state.codeshares.map((cs) => {
+                  const origin = findAirport(cs.originCode)
+                  const dest = findAirport(cs.destCode)
+                  const revenuePerHour =
+                    origin && dest ? codeshareRevenuePerHour(origin.weight, dest.weight, cs.distanceKm) : 0
+                  return (
+                    <div
+                      key={cs.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 12,
+                        flexWrap: 'wrap',
+                        background: 'var(--panel-alt)',
+                        border: '1px solid var(--border-soft)',
+                        borderRadius: 'var(--radius-sm)',
+                        padding: '10px 12px',
+                      }}
+                    >
+                      <strong style={{ color: 'var(--text-h)', fontSize: 13.5 }}>
+                        {cs.originCode} ↔ {cs.destCode}
+                      </strong>
+                      <span className="stat-chip">{cs.partnerName}</span>
+                      <span className="stat-chip">{cs.distanceKm.toLocaleString('pt-BR')} km</span>
+                      <span className="stat-chip money-pos">+{formatMoney(Math.round(revenuePerHour * 24))}/dia</span>
+                      <button style={{ marginLeft: 'auto', fontSize: 12 }} onClick={() => cancelCodeshare(cs.id)}>
+                        Encerrar acordo
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {(() => {
+              const cap = codeshareCap(state.flightsCompleted)
+              const slotsLeft = cap - state.codeshares.length
+              const sameAirport = newCodeshareOrigin === newCodeshareDest
+              const legs = sameAirport ? null : routeLegsKm(newCodeshareOrigin, newCodeshareDest)
+              const fee = legs ? codeshareSigningFee(legs.totalKm) : 0
+              const originAirport = findAirport(newCodeshareOrigin)
+              const destAirport = findAirport(newCodeshareDest)
+              const revenuePerHour =
+                legs && originAirport && destAirport
+                  ? codeshareRevenuePerHour(originAirport.weight, destAirport.weight, legs.totalKm)
+                  : 0
+              const duplicate = state.codeshares.some(
+                (c) =>
+                  (c.originCode === newCodeshareOrigin && c.destCode === newCodeshareDest) ||
+                  (c.originCode === newCodeshareDest && c.destCode === newCodeshareOrigin),
+              )
+              const canCreate = !!legs && slotsLeft > 0 && !duplicate && state.cash >= fee
+
+              return (
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 10,
+                    flexWrap: 'wrap',
+                    alignItems: 'flex-end',
+                    background: 'var(--panel-alt)',
+                    border: '1px solid var(--border-soft)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: 12,
+                  }}
+                >
+                  <Field label="Origem">
+                    <select value={newCodeshareOrigin} onChange={(e) => setNewCodeshareOrigin(e.target.value)}>
+                      {AIRPORTS.map((a) => (
+                        <option key={a.code} value={a.code}>
+                          {a.code} — {a.city}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Destino">
+                    <select value={newCodeshareDest} onChange={(e) => setNewCodeshareDest(e.target.value)}>
+                      {AIRPORTS.map((a) => (
+                        <option key={a.code} value={a.code}>
+                          {a.code} — {a.city}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <button
+                    title={
+                      sameAirport
+                        ? 'Escolha aeroportos diferentes'
+                        : duplicate
+                          ? 'Já existe um acordo nessa rota'
+                          : slotsLeft <= 0
+                            ? `Limite de acordos atingido (${cap})`
+                            : undefined
+                    }
+                    disabled={!canCreate}
+                    onClick={() => createCodeshare(newCodeshareOrigin, newCodeshareDest)}
+                  >
+                    Fechar acordo · {formatMoney(fee)} · +{formatMoney(Math.round(revenuePerHour * 24))}/dia
+                  </button>
+                  <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>
+                    {state.codeshares.length}/{cap} acordos em uso
+                  </span>
+                </div>
+              )
+            })()}
+          </>
+        )}
       </div>
     </div>
   )

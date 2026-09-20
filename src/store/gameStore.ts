@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { GameState, OwnedAircraft, Route, SeatClass, SeatConfig, TrainingCategory } from '../types'
+import type { Codeshare, GameState, OwnedAircraft, Route, SeatClass, SeatConfig, TrainingCategory } from '../types'
 import type { TutorialStep } from '../types'
 import { findAircraftModel } from '../data/aircraft'
 import { routeLegsKm, hasFreeSlot } from '../data/airports'
@@ -30,6 +30,10 @@ import {
   TRAINING_MAX_LEVEL,
   trainingCost,
   TRAINING_LABEL,
+  canOpenCodeshare,
+  codeshareCap,
+  codeshareSigningFee,
+  randomCodesharePartner,
 } from '../engine/economy'
 import { createInitialFuel, buyFuel, nextDepotUpgrade, SAF_PRICE_PREMIUM, SAF_ACTIVATION_REPUTATION_BONUS } from '../engine/fuel'
 import { createInitialCO2, buyCO2 } from '../engine/co2'
@@ -71,6 +75,7 @@ function migrateState(saved: GameState): GameState {
     ...saved,
     fleet,
     routes,
+    codeshares: saved.codeshares ?? [],
     fuel: saved.fuel ?? createInitialFuel(Date.now()),
     co2: saved.co2 ?? createInitialCO2(Date.now()),
     tutorial: !rawTutorial || rawTutorial === 'stock_intro' ? 'done' : (rawTutorial as TutorialStep),
@@ -104,6 +109,8 @@ interface GameStore {
   ) => void
   updateRoutePrices: (routeId: string, prices: Record<SeatClass, number>) => void
   deleteRoute: (routeId: string) => void
+  createCodeshare: (originCode: string, destCode: string) => void
+  cancelCodeshare: (id: string) => void
   dispatchFlight: (routeId: string) => void
   toggleAutoManage: (aircraftId: string) => void
   buyFuel: (litres: number) => void
@@ -155,6 +162,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       co2: createInitialCO2(Date.now()),
       fleet: [],
       routes: [],
+      codeshares: [],
       stock: createInitialStock(sharePrice),
       ledger: [{ id: 'evt-founding', t: Date.now(), label: `${name} foi fundada em ${hubCode}`, amount: STARTING_CASH }],
       lastSeen: Date.now(),
@@ -334,6 +342,60 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ...state,
       routes: state.routes.filter((r) => r.id !== routeId),
       fleet: state.fleet.map((a) => (a.id === route.aircraftId ? { ...a, autoManaged: false } : a)),
+    }
+    set({ state: next })
+    persist(next)
+  },
+
+  createCodeshare: (originCode, destCode) => {
+    const state = get().state
+    if (!state || originCode === destCode) return
+    if (!canOpenCodeshare(state.flightsCompleted, state.company.reputation)) return
+    if (state.codeshares.length >= codeshareCap(state.flightsCompleted)) return
+    const alreadyExists = state.codeshares.some(
+      (c) =>
+        (c.originCode === originCode && c.destCode === destCode) ||
+        (c.originCode === destCode && c.destCode === originCode),
+    )
+    if (alreadyExists) return
+
+    const legs = routeLegsKm(originCode, destCode)
+    if (!legs) return
+    const fee = codeshareSigningFee(legs.totalKm)
+    if (state.cash < fee) return
+
+    const codeshare: Codeshare = {
+      id: `codeshare-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      originCode,
+      destCode,
+      distanceKm: Math.round(legs.totalKm),
+      partnerName: randomCodesharePartner(),
+      createdAt: Date.now(),
+    }
+    const next: GameState = {
+      ...state,
+      cash: state.cash - fee,
+      codeshares: [...state.codeshares, codeshare],
+      ledger: [
+        {
+          id: `evt-codeshare-${codeshare.id}`,
+          t: Date.now(),
+          label: `Acordo de codeshare com ${codeshare.partnerName} (${originCode}-${destCode})`,
+          amount: -fee,
+        },
+        ...state.ledger,
+      ].slice(0, 100),
+    }
+    set({ state: next })
+    persist(next)
+  },
+
+  cancelCodeshare: (id) => {
+    const state = get().state
+    if (!state) return
+    const next: GameState = {
+      ...state,
+      codeshares: state.codeshares.filter((c) => c.id !== id),
     }
     set({ state: next })
     persist(next)
