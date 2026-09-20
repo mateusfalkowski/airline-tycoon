@@ -53,6 +53,9 @@ export interface ActiveFlight {
   /** Distinct countries this flight bought fuel in away from the home depot — the departure
    *  airport when it isn't the route's home side, and always the stopover, if there is one. */
   localFuelCountries?: string[]
+  /** A one-off charter round trip rather than a scheduled dispatch on `routeId` — settles the
+   *  same way (paid at dispatch, wear/hours applied on landing) but isn't tied to a real Route. */
+  isCharter?: boolean
 }
 
 export interface OwnedAircraft {
@@ -208,4 +211,11 @@ export interface GameState {
   training: TrainingLevels
   /** Sustainable Aviation Fuel — costs more per tonne bought, cuts emissions per flight. */
   safEnabled: boolean
+  /** Fleet insurance — an ongoing premium that softens the cash hit and grounding time from bad
+   *  random events (AOG, weather, fuel spikes, strikes). */
+  insuranceEnabled: boolean
+  /** Hired flight/cabin crew headcount — the fleet's total demand (by category) can't exceed
+   *  this, or dispatch is blocked until more are hired. Distinct from the `training.crew` skill
+   *  level, which only affects load factor. */
+  crewCount: number
 }

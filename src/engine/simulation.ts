@@ -1,5 +1,6 @@
 import type {
   ActiveFlight,
+  AircraftCategory,
   CO2State,
   FinanceEvent,
   FuelState,
@@ -36,6 +37,9 @@ import {
   inspectionCost,
   lightMaintenanceCost,
   maintenanceHours,
+  insuranceCostPerHour,
+  crewSalaryPerHour,
+  totalCrewNeeded,
 } from './economy'
 import { computeRouteDemand } from './demand'
 import { advanceFuelMarket, drawFuel, fuelCountryMultiplier, SAF_EMISSIONS_CUT } from './fuel'
@@ -258,6 +262,7 @@ function advanceFleetTo(
   now: number,
   training: TrainingLevels,
   safActive: boolean,
+  crewCount: number,
 ): FleetAdvanceResult {
   let working = fleet
   let workingRoutes = routes
@@ -266,6 +271,8 @@ function advanceFleetTo(
   let autoFlights = 0
   let autoProfit = 0
   const wearMult = trainingMultiplier(training.maintenance)
+  const fleetCategories = fleet.map((a) => findAircraftModel(a.modelId)?.category).filter((c): c is AircraftCategory => !!c)
+  const understaffed = totalCrewNeeded(fleetCategories) > crewCount
 
   for (let guard = 0; guard < MAX_CATCHUP_EVENTS; guard++) {
     let pickIdx = -1
@@ -310,7 +317,7 @@ function advanceFleetTo(
       cash = applied.cash
       if (applied.ledgerEntry) scheduledMaintenanceLedger.push(applied.ledgerEntry)
     } else {
-      if (updated.autoManaged && model && updated.hoursSinceCheck < checkIntervalHours(model.category)) {
+      if (updated.autoManaged && model && !understaffed && updated.hoursSinceCheck < checkIntervalHours(model.category)) {
         const route = workingRoutes.find((r) => r.aircraftId === updated.id)
         const outcome = route
           ? dispatchOutcome(updated, route, fuel, co2, reputation, pickTime, revenueCut, training, safActive)
@@ -371,22 +378,33 @@ export function tick(state: GameState): TickResult {
     const dest = findAirport(cs.destCode)
     return sum + (origin && dest ? codeshareRevenuePerHour(origin.weight, dest.weight, cs.distanceKm) : 0)
   }, 0)
+  const fleetInsuredValue = state.fleet.reduce((sum, ac) => {
+    const m = findAircraftModel(ac.modelId)
+    return sum + (m ? m.price : 0)
+  }, 0)
+  const insurancePerHour = state.insuranceEnabled ? insuranceCostPerHour(fleetInsuredValue) : 0
+  const crewCostPerHour = crewSalaryPerHour(state.crewCount)
   const upkeepHours = Math.min(72, Math.max(0, (now - state.lastSeen) / 3_600_000))
   const interestPerHour = (state.debt * LOAN_DAILY_RATE) / 24
-  cash -= (fixedPerHour + leasePerHour + interestPerHour) * upkeepHours
+  cash -= (fixedPerHour + leasePerHour + interestPerHour + insurancePerHour + crewCostPerHour) * upkeepHours
   cash += codesharePerHour * upkeepHours
 
   let lastFixedLogAt = state.lastFixedLogAt
   if (
     now - lastFixedLogAt >= 3_600_000 &&
-    (fixedPerHour > 0 || leasePerHour > 0 || interestPerHour > 0 || codesharePerHour > 0)
+    (fixedPerHour > 0 ||
+      leasePerHour > 0 ||
+      interestPerHour > 0 ||
+      codesharePerHour > 0 ||
+      insurancePerHour > 0 ||
+      crewCostPerHour > 0)
   ) {
     const loggedHours = Math.min(72, (now - lastFixedLogAt) / 3_600_000)
     if (fixedPerHour > 0)
       ledger.push({
         id: nextEventId(),
         t: now,
-        label: 'Custos fixos da frota (pátio, seguro, equipe base)',
+        label: 'Custos fixos da frota (pátio, handling)',
         amount: -Math.round(fixedPerHour * loggedHours),
       })
     if (leasePerHour > 0)
@@ -409,6 +427,20 @@ export function tick(state: GameState): TickResult {
         t: now,
         label: 'Repasse de codeshare',
         amount: Math.round(codesharePerHour * loggedHours),
+      })
+    if (insurancePerHour > 0)
+      ledger.push({
+        id: nextEventId(),
+        t: now,
+        label: 'Prêmio de seguro da frota',
+        amount: -Math.round(insurancePerHour * loggedHours),
+      })
+    if (crewCostPerHour > 0)
+      ledger.push({
+        id: nextEventId(),
+        t: now,
+        label: 'Folha de tripulação',
+        amount: -Math.round(crewCostPerHour * loggedHours),
       })
     lastFixedLogAt = now
   }
@@ -447,7 +479,7 @@ export function tick(state: GameState): TickResult {
   let eventFleet = state.fleet
   let staffMorale = state.staffMorale
   if (now >= nextEventAt) {
-    const outcome = rollRandomEvent(state, now)
+    const outcome = rollRandomEvent(state, now, state.insuranceEnabled)
     if (outcome) {
       cash += outcome.cashDelta
       reputation = clamp(reputation + outcome.reputationDelta, 0, 100)
@@ -494,8 +526,10 @@ export function tick(state: GameState): TickResult {
   })
 
   // Auto-dispatch: managed aircraft that are idle, not overdue for inspection, take off again.
+  const tickFleetCategories = fleet.map((a) => findAircraftModel(a.modelId)?.category).filter((c): c is AircraftCategory => !!c)
+  const tickUnderstaffed = totalCrewNeeded(tickFleetCategories) > state.crewCount
   fleet = fleet.map((aircraft): OwnedAircraft => {
-    if (!aircraft.autoManaged || aircraft.status !== 'idle') return aircraft
+    if (!aircraft.autoManaged || aircraft.status !== 'idle' || tickUnderstaffed) return aircraft
     const model = findAircraftModel(aircraft.modelId)
     if (!model || aircraft.hoursSinceCheck >= checkIntervalHours(model.category)) return aircraft
     const route = routes.find((r) => r.aircraftId === aircraft.id)
@@ -565,6 +599,7 @@ export function catchUp(state: GameState): TickResult {
     now,
     state.training,
     state.safEnabled,
+    state.crewCount,
   )
 
   const withAdvance: GameState = {

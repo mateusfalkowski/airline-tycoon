@@ -12,9 +12,9 @@ import { WorldMap } from './components/WorldMap'
 import { CompanyPanel } from './components/CompanyPanel'
 import { TutorialBanner } from './components/TutorialBanner'
 import { LandingToasts } from './components/LandingToasts'
-import { checkIntervalHours } from './engine/economy'
+import { checkIntervalHours, totalCrewNeeded } from './engine/economy'
 import { findAircraftModel } from './data/aircraft'
-import type { TutorialStep } from './types'
+import type { AircraftCategory, TutorialStep } from './types'
 
 const TABS = ['Mapa', 'Rotas', 'Mercado', 'Combustível', 'Manutenção', 'Companhia', 'Bolsa', 'Extrato'] as const
 type Tab = (typeof TABS)[number]
@@ -72,6 +72,10 @@ function App() {
     return model && a.hoursSinceCheck >= checkIntervalHours(model.category)
   }).length
   const fuelLow = state.fuel.stored <= 0 && state.routes.length > 0
+  const fleetCategories = state.fleet
+    .map((a) => findAircraftModel(a.modelId)?.category)
+    .filter((c): c is AircraftCategory => !!c)
+  const crewShort = totalCrewNeeded(fleetCategories) > state.crewCount
   const alerts: { text: string; tab: Tab }[] = []
   if (state.cash < 0)
     alerts.push({
@@ -84,6 +88,7 @@ function App() {
       tab: 'Manutenção',
     })
   if (fuelLow) alerts.push({ text: 'Depósito de combustível vazio — voos comprando no preço spot', tab: 'Combustível' })
+  if (crewShort) alerts.push({ text: 'Tripulação insuficiente para a frota — despachos travados', tab: 'Companhia' })
 
   return (
     <div>

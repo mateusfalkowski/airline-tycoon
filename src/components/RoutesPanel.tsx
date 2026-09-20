@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { AircraftModel, GameState, Route, SeatClass, TutorialStep } from '../types'
+import type { AircraftCategory, AircraftModel, GameState, OwnedAircraft, Route, SeatClass, TutorialStep } from '../types'
 import { AIRPORTS, findAirport, routeLegsKm, isRouteReachable, hasFreeSlot, airportSlotCapacity, slotsUsed } from '../data/airports'
 import { findAircraftModel } from '../data/aircraft'
 import { distanceKm } from '../engine/geo'
@@ -22,6 +22,8 @@ import {
   codeshareRevenuePerHour,
   CODESHARE_MIN_FLIGHTS,
   CODESHARE_MIN_REPUTATION,
+  charterQuote,
+  totalCrewNeeded,
 } from '../engine/economy'
 import { computeRouteDemand } from '../engine/demand'
 import { useGameStore } from '../store/gameStore'
@@ -51,11 +53,13 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
   const deleteRoute = useGameStore((s) => s.deleteRoute)
   const createCodeshare = useGameStore((s) => s.createCodeshare)
   const cancelCodeshare = useGameStore((s) => s.cancelCodeshare)
+  const charterFlight = useGameStore((s) => s.charterFlight)
   const [editingAircraft, setEditingAircraft] = useState<string | null>(null)
   const [explainManager, setExplainManager] = useState<string | null>(null)
   const [editingPrices, setEditingPrices] = useState<{ routeId: string; prices: Record<SeatClass, number> } | null>(null)
   const [newCodeshareOrigin, setNewCodeshareOrigin] = useState(AIRPORTS[0].code)
   const [newCodeshareDest, setNewCodeshareDest] = useState(AIRPORTS[1].code)
+  const [charteringAircraft, setCharteringAircraft] = useState<string | null>(null)
   const highlightDefineRoute = tutorial === 'create_route'
   const highlightDispatch = tutorial === 'dispatch_flight'
 
@@ -73,6 +77,11 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
     const m = findAircraftModel(ac.modelId)
     return s + (m ? fixedCostPerHour(m.price) : 0)
   }, 0) * 24
+
+  const fleetCategories = state.fleet
+    .map((a) => findAircraftModel(a.modelId)?.category)
+    .filter((c): c is AircraftCategory => !!c)
+  const crewShort = totalCrewNeeded(fleetCategories) > state.crewCount
 
   const readyToDispatch = state.fleet.filter((a) => {
     const model = findAircraftModel(a.modelId)
@@ -107,6 +116,8 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
           <button
             className="primary"
             style={{ fontSize: 12, marginLeft: 'auto' }}
+            disabled={crewShort}
+            title={crewShort ? 'Tripulação insuficiente — contrate mais em Companhia' : undefined}
             onClick={() => {
               readyToDispatch.forEach((a) => {
                 const r = state.routes.find((rt) => rt.aircraftId === a.id)
@@ -234,6 +245,8 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
                     {aircraft.status === 'idle' && !aircraft.autoManaged && (
                       <button
                         className={`primary${highlightDispatch ? ' tutorial-highlight' : ''}`}
+                        disabled={crewShort}
+                        title={crewShort ? 'Tripulação insuficiente — contrate mais em Companhia' : undefined}
                         onClick={() => dispatchFlight(route.id)}
                       >
                         Despachar voo
@@ -346,6 +359,30 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
                     Definir rota
                   </button>
                 </div>
+              )}
+
+              {aircraft.status === 'idle' && !aircraft.autoManaged && model && (
+                charteringAircraft === aircraft.id ? (
+                  <CharterForm
+                    aircraft={aircraft}
+                    model={model}
+                    route={route}
+                    hubCode={state.company.hubCode}
+                    fuelPrice={state.fuel.price}
+                    crewShort={crewShort}
+                    onCancel={() => setCharteringAircraft(null)}
+                    onCharter={(destCode) => {
+                      charterFlight(aircraft.id, destCode)
+                      setCharteringAircraft(null)
+                    }}
+                  />
+                ) : (
+                  <div>
+                    <button style={{ fontSize: 12 }} onClick={() => setCharteringAircraft(aircraft.id)}>
+                      ✈️ Fretar viagem avulsa
+                    </button>
+                  </div>
+                )
               )}
             </div>
           )
@@ -476,6 +513,81 @@ export function RoutesPanel({ state, now, tutorial }: { state: GameState; now: n
             })()}
           </>
         )}
+      </div>
+    </div>
+  )
+}
+
+function CharterForm({
+  aircraft,
+  model,
+  route,
+  hubCode,
+  fuelPrice,
+  crewShort,
+  onCancel,
+  onCharter,
+}: {
+  aircraft: OwnedAircraft
+  model: AircraftModel
+  route: Route | undefined
+  hubCode: string
+  fuelPrice: number
+  crewShort: boolean
+  onCancel: () => void
+  onCharter: (destCode: string) => void
+}) {
+  const currentCode = route ? ((aircraft.homeSide ?? 'origin') === 'origin' ? route.originCode : route.destCode) : hubCode
+  const otherAirports = AIRPORTS.filter((a) => a.code !== currentCode)
+  const [destCode, setDestCode] = useState(otherAirports[0]?.code ?? currentCode)
+
+  const legs = destCode !== currentCode ? routeLegsKm(currentCode, destCode) : null
+  const inRange = !!legs && legs.totalKm <= model.rangeKm
+  const quote = legs && inRange ? charterQuote(model, legs.totalKm, fuelPrice) : null
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        padding: 12,
+        background: 'var(--panel)',
+        border: '1px solid var(--border-soft)',
+        borderRadius: 'var(--radius-sm)',
+      }}
+    >
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <span className="stat-chip">
+          Parte de <strong>{currentCode}</strong>, ida e volta
+        </span>
+        <Field label="Destino">
+          <select value={destCode} onChange={(e) => setDestCode(e.target.value)}>
+            {otherAirports.map((a) => (
+              <option key={a.code} value={a.code}>
+                {a.code} — {a.city}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
+      {legs && !inRange && (
+        <p style={{ color: 'var(--red)', fontSize: 11, margin: 0 }}>
+          Fora do alcance da aeronave ({model.rangeKm.toLocaleString('pt-BR')} km)
+        </p>
+      )}
+      {crewShort && (
+        <p style={{ color: 'var(--red)', fontSize: 11, margin: 0 }}>Tripulação insuficiente pra esse voo</p>
+      )}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          className="primary"
+          disabled={!quote || crewShort}
+          onClick={() => quote && onCharter(destCode)}
+        >
+          {quote ? `Fretar · ${formatMoney(quote.payout)} · ${formatDuration(quote.hours)} ida e volta` : 'Fretar'}
+        </button>
+        <button onClick={onCancel}>Cancelar</button>
       </div>
     </div>
   )

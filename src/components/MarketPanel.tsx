@@ -34,6 +34,7 @@ export function MarketPanel({ state, tutorial }: { state: GameState; tutorial?: 
   const buyAircraft = useGameStore((s) => s.buyAircraft)
   const leaseAircraft = useGameStore((s) => s.leaseAircraft)
   const sellAircraft = useGameStore((s) => s.sellAircraft)
+  const saleLeaseback = useGameStore((s) => s.saleLeaseback)
   const highlightBuy = tutorial === 'buy_aircraft'
   const [configuringId, setConfiguringId] = useState<string | null>(null)
   const [confirmSellId, setConfirmSellId] = useState<string | null>(null)
@@ -93,14 +94,30 @@ export function MarketPanel({ state, tutorial }: { state: GameState; tutorial?: 
                       </button>
                     </span>
                   ) : (
-                    <button
-                      style={{ marginLeft: 'auto', fontSize: 12 }}
-                      disabled={!canSell}
-                      title={!canSell ? 'A aeronave precisa estar em solo' : undefined}
-                      onClick={() => setConfirmSellId(ac.id)}
-                    >
-                      {ac.leased ? 'Devolver' : `Vender · ${formatMoney(value)}`}
-                    </button>
+                    <>
+                      {!ac.leased && (
+                        <button
+                          style={{ fontSize: 12, marginLeft: 'auto' }}
+                          disabled={!canSell}
+                          title={
+                            !canSell
+                              ? 'A aeronave precisa estar em solo'
+                              : 'Vende para uma arrendadora e continua voando essa mesma aeronave, agora arrendada'
+                          }
+                          onClick={() => saleLeaseback(ac.id)}
+                        >
+                          Sale-leaseback · {formatMoney(value)}
+                        </button>
+                      )}
+                      <button
+                        style={{ fontSize: 12, marginLeft: ac.leased ? 'auto' : undefined }}
+                        disabled={!canSell}
+                        title={!canSell ? 'A aeronave precisa estar em solo' : undefined}
+                        onClick={() => setConfirmSellId(ac.id)}
+                      >
+                        {ac.leased ? 'Devolver' : `Vender · ${formatMoney(value)}`}
+                      </button>
+                    </>
                   )}
                 </div>
               )

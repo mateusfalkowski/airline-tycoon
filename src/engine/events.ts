@@ -1,7 +1,7 @@
 import type { GameState, OwnedAircraft } from '../types'
 import { findAircraftModel } from '../data/aircraft'
 import { computeValuation, fleetValue } from './stockMarket'
-import { clamp, realFlightMs } from './economy'
+import { clamp, realFlightMs, INSURANCE_CASH_RELIEF, INSURANCE_DOWNTIME_RELIEF } from './economy'
 
 /** Random events fire rarely (hours apart) and resolve almost immediately — a short shock or bonus, not a lasting condition. */
 export const EVENT_MIN_INTERVAL_MS = 4 * 60 * 60 * 1000
@@ -49,9 +49,13 @@ function fleetShare(state: GameState, minPct: number, maxPct: number, floor: num
   return clamp(v * pct, floor, cap)
 }
 
-/** Rolls one random event. Returns null only if nothing could apply (shouldn't happen in practice). */
-export function rollRandomEvent(state: GameState, now: number): RandomEventOutcome | null {
+/** Rolls one random event. Returns null only if nothing could apply (shouldn't happen in practice).
+ *  `insured` softens the downside — less cash lost, shorter groundings — but never touches
+ *  reputation or morale hits, or the upside events; a policy doesn't fix your name. */
+export function rollRandomEvent(state: GameState, now: number, insured: boolean): RandomEventOutcome | null {
   const idleFleet = state.fleet.filter((a) => a.status === 'idle')
+  const cashMult = insured ? 1 - INSURANCE_CASH_RELIEF : 1
+  const downtimeMult = insured ? 1 - INSURANCE_DOWNTIME_RELIEF : 1
 
   const pool: EventKind[] = ['fuel_spike', 'strike_delay', 'incident', 'demand_boom', 'good_pr', 'route_subsidy']
   if (idleFleet.length > 0) pool.push('aog', 'weather')
@@ -64,18 +68,18 @@ export function rollRandomEvent(state: GameState, now: number): RandomEventOutco
 
   switch (kind) {
     case 'fuel_spike': {
-      const cost = fleetShare(state, 0.003, 0.01, 5_000, 3_000_000)
+      const cost = fleetShare(state, 0.003, 0.01, 5_000, 3_000_000) * cashMult
       return {
-        label: 'Pico de combustível: abastecimento emergencial saiu mais caro',
+        label: `Pico de combustível: abastecimento emergencial saiu mais caro${insured ? ' (seguro cobriu parte)' : ''}`,
         cashDelta: -cost,
         reputationDelta: 0,
         moraleDelta: 0,
       }
     }
     case 'strike_delay': {
-      const cost = fleetShare(state, 0.003, 0.008, 4_000, 2_000_000)
+      const cost = fleetShare(state, 0.003, 0.008, 4_000, 2_000_000) * cashMult
       return {
-        label: 'Greve pontual gerou custos de compensação a passageiros',
+        label: `Greve pontual gerou custos de compensação a passageiros${insured ? ' (seguro cobriu parte)' : ''}`,
         cashDelta: -cost,
         reputationDelta: -2,
         moraleDelta: -(6 + Math.random() * 8),
@@ -118,14 +122,14 @@ export function rollRandomEvent(state: GameState, now: number): RandomEventOutco
     case 'aog': {
       const target = idleFleet[Math.floor(Math.random() * idleFleet.length)]
       const model = findAircraftModel(target.modelId)
-      const groundedUntil = now + realFlightMs(AOG_DURATION_HOURS)
+      const groundedUntil = now + realFlightMs(AOG_DURATION_HOURS * downtimeMult)
       const fleet = state.fleet.map((a) =>
         a.id === target.id
           ? { ...a, status: 'maintenance' as const, maintenanceKind: 'aog' as const, maintenanceUntil: groundedUntil }
           : a,
       )
       return {
-        label: `Falha técnica tirou ${model?.name ?? 'uma aeronave'} de operação temporariamente`,
+        label: `Falha técnica tirou ${model?.name ?? 'uma aeronave'} de operação temporariamente${insured ? ' (seguro agilizou o reparo)' : ''}`,
         cashDelta: 0,
         reputationDelta: 0,
         moraleDelta: 0,
@@ -135,15 +139,15 @@ export function rollRandomEvent(state: GameState, now: number): RandomEventOutco
     case 'weather': {
       const target = idleFleet[Math.floor(Math.random() * idleFleet.length)]
       const model = findAircraftModel(target.modelId)
-      const fee = fleetShare(state, 0.001, 0.003, 1_000, 600_000)
-      const groundedUntil = now + realFlightMs(WEATHER_DURATION_HOURS)
+      const fee = fleetShare(state, 0.001, 0.003, 1_000, 600_000) * cashMult
+      const groundedUntil = now + realFlightMs(WEATHER_DURATION_HOURS * downtimeMult)
       const fleet = state.fleet.map((a) =>
         a.id === target.id
           ? { ...a, status: 'maintenance' as const, maintenanceKind: 'weather' as const, maintenanceUntil: groundedUntil }
           : a,
       )
       return {
-        label: `Tempestade atrasou ${model?.name ?? 'uma aeronave'} — taxa de degelo cobrada antes da liberação`,
+        label: `Tempestade atrasou ${model?.name ?? 'uma aeronave'} — taxa de degelo cobrada antes da liberação${insured ? ' (seguro cobriu parte)' : ''}`,
         cashDelta: -fee,
         reputationDelta: 0,
         moraleDelta: 0,

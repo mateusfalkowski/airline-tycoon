@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import type { GameState } from '../types'
+import type { AircraftCategory, GameState } from '../types'
 import { useGameStore, getCompanyValuation } from '../store/gameStore'
 import { computeWorth } from '../engine/stockMarket'
+import { findAircraftModel } from '../data/aircraft'
 import { formatCountdown, formatMoney, formatShares } from '../format'
 import { NumberInput } from './NumberInput'
 import {
@@ -20,6 +21,15 @@ import {
   TRAINING_EFFECT_PER_LEVEL,
   CREW_BONUS_PER_LEVEL,
   trainingCost,
+  INSURANCE_CASH_RELIEF,
+  INSURANCE_DOWNTIME_RELIEF,
+  insuranceCostPerHour,
+  CREW_REQUIRED,
+  CREW_HIRE_COST_PER_HEAD,
+  CREW_SALARY_PER_HOUR_PER_HEAD,
+  crewHireCost,
+  crewSalaryPerHour,
+  totalCrewNeeded,
 } from '../engine/economy'
 import type { TrainingCategory } from '../types'
 import { MILESTONES } from '../engine/milestones'
@@ -42,10 +52,13 @@ export function CompanyPanel({ state, now }: { state: GameState; now: number }) 
   const giveStaffBonus = useGameStore((s) => s.giveStaffBonus)
   const investTraining = useGameStore((s) => s.investTraining)
   const toggleRevenueTeam = useGameStore((s) => s.toggleRevenueTeam)
+  const toggleInsurance = useGameStore((s) => s.toggleInsurance)
+  const hireCrew = useGameStore((s) => s.hireCrew)
   const takeLoan = useGameStore((s) => s.takeLoan)
   const repayLoan = useGameStore((s) => s.repayLoan)
   const [borrowAmt, setBorrowAmt] = useState(0)
   const [repayAmt, setRepayAmt] = useState(0)
+  const [hireCount, setHireCount] = useState(4)
   const rep = state.company.reputation
   const cooldown = (state.company.campaignReadyAt ?? 0) - now
   const onCooldown = cooldown > 0
@@ -59,6 +72,15 @@ export function CompanyPanel({ state, now }: { state: GameState; now: number }) 
   const maxRepay = Math.min(state.debt, Math.floor(state.cash))
   const interestPerDay = Math.round(state.debt * LOAN_DAILY_RATE)
   const achievedIds = new Set(state.achievedMilestones)
+
+  const fleetCategories = state.fleet
+    .map((a) => findAircraftModel(a.modelId)?.category)
+    .filter((c): c is AircraftCategory => !!c)
+  const fleetInsuredValue = state.fleet.reduce((sum, a) => sum + (findAircraftModel(a.modelId)?.price ?? 0), 0)
+  const insurancePerDay = insuranceCostPerHour(fleetInsuredValue) * 24
+  const crewNeeded = totalCrewNeeded(fleetCategories)
+  const crewShort = crewNeeded > state.crewCount
+  const crewSalaryPerDay = crewSalaryPerHour(state.crewCount) * 24
 
   return (
     <div>
@@ -270,6 +292,65 @@ export function CompanyPanel({ state, now }: { state: GameState; now: number }) 
           Contratar equipe de revenue · {formatMoney(REVENUE_TEAM_HIRE_FEE)}
         </button>
       )}
+
+      <h3 style={{ fontSize: 15, marginTop: 24 }}>Seguro da frota</h3>
+      <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: -6, maxWidth: 520 }}>
+        Um seguro reduz em <strong style={{ color: 'var(--text-h)' }}>{Math.round(INSURANCE_CASH_RELIEF * 100)}%</strong>{' '}
+        o prejuízo em dinheiro de eventos aleatórios ruins (pico de combustível, greve, degelo) e corta em{' '}
+        <strong style={{ color: 'var(--text-h)' }}>{Math.round(INSURANCE_DOWNTIME_RELIEF * 100)}%</strong> o tempo
+        parado por falha técnica ou mau tempo. Não muda reputação nem moral perdidas num
+        incidente — pra isso não existe apólice. Custa{' '}
+        <strong style={{ color: 'var(--text-h)' }}>{formatMoney(Math.round(insurancePerDay))}/dia</strong> com a
+        frota atual, debitado de forma contínua.
+      </p>
+      {state.insuranceEnabled ? (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span className="badge" style={{ color: 'var(--accent)', borderColor: 'var(--accent)' }}>
+            Ativo
+          </span>
+          <button style={{ fontSize: 12 }} onClick={toggleInsurance}>
+            Cancelar seguro
+          </button>
+        </div>
+      ) : (
+        <button className="primary" style={{ fontSize: 12 }} onClick={toggleInsurance}>
+          Contratar seguro
+        </button>
+      )}
+
+      <h3 style={{ fontSize: 15, marginTop: 24 }}>Quadro de tripulação</h3>
+      <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: -6, maxWidth: 520 }}>
+        Cada aeronave da frota — própria ou arrendada — exige tripulação própria pra voar:{' '}
+        {CREW_REQUIRED.regional} por regional, {CREW_REQUIRED.narrowbody} por corredor único,{' '}
+        {CREW_REQUIRED.widebody} por longo curso. Sem gente suficiente, nenhum despacho sai — nem manual, nem
+        automático — até contratar mais. Diferente da "Eficiência da tripulação" em Treinamento: aqui é
+        efetivo, lá é habilidade. Contratação custa{' '}
+        <strong style={{ color: 'var(--text-h)' }}>{formatMoney(CREW_HIRE_COST_PER_HEAD)}</strong> por cabeça,
+        mais <strong style={{ color: 'var(--text-h)' }}>{formatMoney(CREW_SALARY_PER_HOUR_PER_HEAD)}/h</strong>{' '}
+        de folha por tripulante, contínuo — não tem demissão.
+      </p>
+      <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', marginBottom: 10 }}>
+        <Metric label="Tripulantes" value={`${state.crewCount}`} />
+        <Metric label="Necessário pra frota atual" value={`${crewNeeded}`} />
+        <Metric label="Folha por dia" value={formatMoney(Math.round(crewSalaryPerDay))} />
+      </div>
+      {crewShort && (
+        <p style={{ color: 'var(--red)', fontSize: 12, marginTop: -4 }}>
+          Tripulação insuficiente — despachos travados até contratar mais {crewNeeded - state.crewCount}.
+        </p>
+      )}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <NumberInput style={{ width: 90 }} min={1} value={hireCount} onChange={setHireCount} />
+        <button
+          className={crewShort ? 'primary' : undefined}
+          style={{ fontSize: 12 }}
+          disabled={hireCount <= 0 || state.cash < crewHireCost(hireCount)}
+          title={state.cash < crewHireCost(hireCount) ? 'Caixa insuficiente' : undefined}
+          onClick={() => hireCrew(hireCount)}
+        >
+          Contratar · {formatMoney(crewHireCost(hireCount))}
+        </button>
+      </div>
 
       <h3 style={{ fontSize: 15, marginTop: 24 }}>Financiamento</h3>
       <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: -6, maxWidth: 520 }}>

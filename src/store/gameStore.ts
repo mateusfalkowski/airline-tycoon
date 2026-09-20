@@ -1,5 +1,14 @@
 import { create } from 'zustand'
-import type { Codeshare, GameState, OwnedAircraft, Route, SeatClass, SeatConfig, TrainingCategory } from '../types'
+import type {
+  AircraftCategory,
+  Codeshare,
+  GameState,
+  OwnedAircraft,
+  Route,
+  SeatClass,
+  SeatConfig,
+  TrainingCategory,
+} from '../types'
 import type { TutorialStep } from '../types'
 import { findAircraftModel } from '../data/aircraft'
 import { routeLegsKm, hasFreeSlot } from '../data/airports'
@@ -34,6 +43,10 @@ import {
   codeshareCap,
   codeshareSigningFee,
   randomCodesharePartner,
+  CREW_STARTING_COUNT,
+  crewHireCost,
+  totalCrewNeeded,
+  charterQuote,
 } from '../engine/economy'
 import { createInitialFuel, buyFuel, nextDepotUpgrade, SAF_PRICE_PREMIUM, SAF_ACTIVATION_REPUTATION_BONUS } from '../engine/fuel'
 import { createInitialCO2, buyCO2 } from '../engine/co2'
@@ -89,6 +102,8 @@ function migrateState(saved: GameState): GameState {
     staffMorale: saved.staffMorale ?? 70,
     training: saved.training ?? { fuel: 0, maintenance: 0, emissions: 0, crew: 0 },
     safEnabled: saved.safEnabled ?? false,
+    insuranceEnabled: saved.insuranceEnabled ?? false,
+    crewCount: saved.crewCount ?? CREW_STARTING_COUNT,
   }
 }
 
@@ -100,6 +115,8 @@ interface GameStore {
   buyAircraft: (modelId: string, seatConfig?: SeatConfig) => void
   leaseAircraft: (modelId: string, seatConfig?: SeatConfig) => void
   sellAircraft: (aircraftId: string) => void
+  saleLeaseback: (aircraftId: string) => void
+  charterFlight: (aircraftId: string, destCode: string) => void
   createRoute: (
     originCode: string,
     destCode: string,
@@ -121,6 +138,8 @@ interface GameStore {
   giveStaffBonus: () => void
   investTraining: (category: TrainingCategory) => void
   toggleRevenueTeam: () => void
+  toggleInsurance: () => void
+  hireCrew: (count: number) => void
   takeLoan: (amount: number) => void
   repayLoan: (amount: number) => void
   serviceAircraft: (aircraftId: string) => void
@@ -177,6 +196,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       staffMorale: 70,
       training: { fuel: 0, maintenance: 0, emissions: 0, crew: 0 },
       safEnabled: false,
+      insuranceEnabled: false,
+      crewCount: CREW_STARTING_COUNT,
     }
     set({ state: newState })
     persist(newState)
@@ -277,6 +298,84 @@ export const useGameStore = create<GameStore>((set, get) => ({
           t: now,
           label: aircraft.leased ? `Devolveu ${model.name} arrendado` : `Vendeu ${model.name} (usado)`,
           amount: value,
+        },
+        ...state.ledger,
+      ].slice(0, 100),
+    }
+    set({ state: next })
+    persist(next)
+  },
+
+  /** Sells an owned aircraft to a lessor and leases it straight back — cash now, at the cost of
+   *  an ongoing lease bill instead of owning it outright. Keeps flying the same airframe on the
+   *  same route; only `leased` flips, everything else (wear, hours, route) carries over. */
+  saleLeaseback: (aircraftId) => {
+    const state = get().state
+    if (!state) return
+    const aircraft = state.fleet.find((a) => a.id === aircraftId)
+    if (!aircraft || aircraft.leased || aircraft.status !== 'idle') return
+    const model = findAircraftModel(aircraft.modelId)
+    if (!model) return
+    const value = resaleValue(model.price, aircraft.totalHours, aircraft.wear)
+    const now = Date.now()
+    const next: GameState = {
+      ...state,
+      cash: state.cash + value,
+      fleet: state.fleet.map((a) => (a.id === aircraftId ? { ...a, leased: true } : a)),
+      ledger: [
+        {
+          id: `evt-saleleaseback-${now}`,
+          t: now,
+          label: `Sale-leaseback: vendeu ${model.name} e arrendou de volta`,
+          amount: value,
+        },
+        ...state.ledger,
+      ].slice(0, 100),
+    }
+    set({ state: next })
+    persist(next)
+  },
+
+  charterFlight: (aircraftId, destCode) => {
+    const state = get().state
+    if (!state) return
+    const aircraft = state.fleet.find((a) => a.id === aircraftId)
+    if (!aircraft || aircraft.status !== 'idle' || aircraft.autoManaged) return
+    const model = findAircraftModel(aircraft.modelId)
+    if (!model) return
+    const fleetCategories = state.fleet
+      .map((a) => findAircraftModel(a.modelId)?.category)
+      .filter((c): c is AircraftCategory => !!c)
+    if (totalCrewNeeded(fleetCategories) > state.crewCount) return
+
+    const route = state.routes.find((r) => r.aircraftId === aircraftId)
+    const originCode = route ? ((aircraft.homeSide ?? 'origin') === 'origin' ? route.originCode : route.destCode) : state.company.hubCode
+    if (originCode === destCode) return
+    const legs = routeLegsKm(originCode, destCode)
+    if (!legs || legs.totalKm > model.rangeKm) return
+
+    const quote = charterQuote(model, legs.totalKm, state.fuel.price)
+    const now = Date.now()
+    const flight = {
+      routeId: 'charter',
+      originCode,
+      destCode,
+      departedAt: now,
+      arrivesAt: now + realFlightMs(quote.hours),
+      hours: quote.hours,
+      profit: quote.payout,
+      isCharter: true,
+    }
+    const next: GameState = {
+      ...state,
+      cash: state.cash + quote.payout,
+      fleet: state.fleet.map((a) => (a.id === aircraftId ? { ...a, status: 'flying' as const, flight } : a)),
+      ledger: [
+        {
+          id: `evt-charter-${now}`,
+          t: now,
+          label: `Fretamento ${originCode}→${destCode}: ${model.name}`,
+          amount: Math.round(quote.payout),
         },
         ...state.ledger,
       ].slice(0, 100),
@@ -410,6 +509,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!aircraft || aircraft.status !== 'idle') return
     const model = findAircraftModel(aircraft.modelId)
     if (!model || aircraft.hoursSinceCheck >= checkIntervalHours(model.category)) return
+    const fleetCategories = state.fleet
+      .map((a) => findAircraftModel(a.modelId)?.category)
+      .filter((c): c is AircraftCategory => !!c)
+    if (totalCrewNeeded(fleetCategories) > state.crewCount) return
 
     const now = Date.now()
     const outcome = dispatchOutcome(
@@ -602,6 +705,54 @@ export const useGameStore = create<GameStore>((set, get) => ({
       lastRevenueTuneAt: now,
       ledger: [
         { id: `evt-rm-on-${now}`, t: now, label: 'Contratou a equipe de revenue', amount: -REVENUE_TEAM_HIRE_FEE },
+        ...state.ledger,
+      ].slice(0, 100),
+    }
+    set({ state: next })
+    persist(next)
+  },
+
+  toggleInsurance: () => {
+    const state = get().state
+    if (!state) return
+    const now = Date.now()
+    const turningOn = !state.insuranceEnabled
+    const next: GameState = {
+      ...state,
+      insuranceEnabled: turningOn,
+      ledger: [
+        {
+          id: `evt-insurance-${now}`,
+          t: now,
+          label: turningOn ? 'Contratou seguro para a frota' : 'Cancelou o seguro da frota',
+          amount: 0,
+        },
+        ...state.ledger,
+      ].slice(0, 100),
+    }
+    set({ state: next })
+    persist(next)
+  },
+
+  hireCrew: (count) => {
+    const state = get().state
+    if (!state) return
+    const headcount = Math.floor(count)
+    if (headcount <= 0) return
+    const cost = crewHireCost(headcount)
+    if (state.cash < cost) return
+    const now = Date.now()
+    const next: GameState = {
+      ...state,
+      cash: state.cash - cost,
+      crewCount: state.crewCount + headcount,
+      ledger: [
+        {
+          id: `evt-crew-${now}`,
+          t: now,
+          label: `Contratou ${headcount} ${headcount === 1 ? 'tripulante' : 'tripulantes'}`,
+          amount: -cost,
+        },
         ...state.ledger,
       ].slice(0, 100),
     }

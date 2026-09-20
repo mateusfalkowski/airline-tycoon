@@ -23,13 +23,27 @@ export function managerFee(revenue: number): number {
   return MANAGER_FLAT_FEE + MANAGER_REVENUE_CUT * revenue
 }
 
-/** Fixed upkeep (parking, insurance, base crew) per real hour, as a fraction of the aircraft's value.
+/** Fixed upkeep (parking, ground handling) per real hour, as a fraction of the aircraft's value.
  *  Charged whether the aircraft flies or sits — idle fleet bleeds cash. Deliberately excludes
- *  maintenance, which is already paid for separately (per-flight wear cost, plus inspections). */
+ *  maintenance (paid separately, per-flight wear cost plus inspections), insurance and crew
+ *  payroll, which are their own line items below. */
 export const FIXED_COST_RATE = 0.00001
 
 export function fixedCostPerHour(modelPrice: number): number {
   return modelPrice * FIXED_COST_RATE
+}
+
+/** Fleet insurance: an ongoing premium (per hour, on total fleet value) that in exchange softens
+ *  the downside of bad random events — cash losses cut by INSURANCE_CASH_RELIEF, AOG/weather
+ *  downtime cut by INSURANCE_DOWNTIME_RELIEF. Doesn't touch reputation/morale hits (an incident
+ *  still dents your name — no policy fixes that) or the upside events, same as real hull/business
+ *  interruption cover. */
+export const INSURANCE_RATE = 0.00002
+export const INSURANCE_CASH_RELIEF = 0.65
+export const INSURANCE_DOWNTIME_RELIEF = 0.5
+
+export function insuranceCostPerHour(fleetValue: number): number {
+  return fleetValue * INSURANCE_RATE
 }
 
 /** Leasing: skip the purchase price for a higher ongoing cost — cheaper to start, pricier over
@@ -125,6 +139,36 @@ export function trainingCost(currentLevel: number): number {
 /** Multiplier for fuel burn, wear accrual or CO2-per-tonne — 1 at level 0, down to 0.85 at max level. */
 export function trainingMultiplier(level: number): number {
   return 1 - level * TRAINING_EFFECT_PER_LEVEL
+}
+
+/** Crew headcount: flight/cabin crew you actually hire, distinct from the `training.crew` skill
+ *  level above (that's efficiency; this is capacity). Every aircraft in the fleet — owned or
+ *  leased — demands crew by category, roughly matching real minimum complements scaled down; if
+ *  total demand outgrows headcount, dispatch is blocked fleet-wide until more are hired. Hiring
+ *  is permanent (no layoffs), same framing as training. */
+export const CREW_REQUIRED: Record<AircraftCategory, number> = {
+  regional: 4,
+  narrowbody: 8,
+  widebody: 16,
+}
+export const CREW_HIRE_COST_PER_HEAD = 60_000
+export const CREW_SALARY_PER_HOUR_PER_HEAD = 6
+export const CREW_STARTING_COUNT = 8
+
+export function crewRequiredFor(category: AircraftCategory): number {
+  return CREW_REQUIRED[category]
+}
+
+export function totalCrewNeeded(categories: AircraftCategory[]): number {
+  return categories.reduce((sum, category) => sum + CREW_REQUIRED[category], 0)
+}
+
+export function crewHireCost(headcount: number): number {
+  return headcount * CREW_HIRE_COST_PER_HEAD
+}
+
+export function crewSalaryPerHour(crewCount: number): number {
+  return crewCount * CREW_SALARY_PER_HOUR_PER_HEAD
 }
 
 /** Loans: borrow against company value. A young, high-leverage airline is a speculative-grade
@@ -232,6 +276,29 @@ export function cargoRevenueForFlight(
   const fillFactor = clamp(Math.sqrt(originWeight * destWeight) / 100, 0.2, 1)
   const tonnesCarried = capacity * fillFactor
   return tonnesCarried * 1000 * cargoRatePerKg(distanceKm)
+}
+
+/** Charter: a one-off round trip for a single client (a team, a tour group) instead of a
+ *  standing route — no seat-by-seat demand simulation, just a lump sum for the whole aircraft at
+ *  a premium over scheduled fare, minus the fuel and maintenance the round trip actually costs.
+ *  Settles at dispatch like a normal flight; the aircraft comes home to where it started. */
+export const CHARTER_LOAD_FACTOR = 0.85
+export const CHARTER_PREMIUM = 1.3
+
+export interface CharterQuote {
+  /** Round-trip elapsed hours — there and back, no stopover. */
+  hours: number
+  /** Net cash credited at dispatch (fare minus fuel and maintenance for the round trip). */
+  payout: number
+}
+
+export function charterQuote(model: AircraftModel, distanceKm: number, fuelPrice: number): CharterQuote {
+  const legHours = flightTimeHours(distanceKm, model.cruiseSpeedKmh)
+  const hours = legHours * 2
+  const grossFare = fairPriceForClass(distanceKm, 'economy') * model.seats * CHARTER_LOAD_FACTOR * CHARTER_PREMIUM
+  const fuelCost = 2 * fuelTonnes(model, distanceKm) * fuelPrice
+  const maintenanceCost = model.maintenancePerHour * hours
+  return { hours, payout: Math.round(grossFare - fuelCost - maintenanceCost) }
 }
 
 /** Codeshare: sell seats on a route a partner airline actually flies, for a cut of the fare —
